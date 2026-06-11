@@ -18,6 +18,8 @@ env/
 
 # Local artifacts
 data/raw/*
+data/processed/news_signals_*.csv
+data/processed/taiwan_impact_candidates_*.csv
 data/reports/*
 !data/raw/.gitkeep
 !data/reports/.gitkeep

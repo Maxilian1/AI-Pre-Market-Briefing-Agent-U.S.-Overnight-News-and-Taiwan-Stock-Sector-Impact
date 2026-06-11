@@ -1,172 +1,225 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 2 only: fixture-driven raw news schema, deterministic deduplication, and a public RSS metadata collector.
+Implement Phase 4 only: deterministic Taiwan ticker / sector impact mapping from structured U.S. news signals.
 
 Important:
 Do not implement LLM classification.
-Do not implement sentiment scoring.
-Do not implement Taiwan ticker mapping from news yet.
+Do not call OpenAI or any external LLM API.
+Do not collect live news.
 Do not implement market data ingestion.
 Do not implement backtesting.
-Do not scrape full article bodies.
-Do not scrape paywalled websites.
+Do not generate full pre-market Markdown reports yet.
 Do not make trading recommendations.
 
-Goal:
-Create a reproducible raw news collection layer for the Taiwan pre-market news signal research pipeline.
-
 Context:
-Phase 1 scaffold and smoke tests already pass.
-The project is focused on overnight U.S. semiconductor / AI financial news and possible Taiwan semiconductor / AI supply-chain impact, but Phase 2 should only collect raw metadata.
-
-Requirements:
-
-1. Create src/news_collectors/base.py
-
-Define a NewsItem dataclass with fields:
-- news_id: str
-- source: str
-- title: str
-- url: str | None
-- published_at_utc: str | None
-- retrieved_at_utc: str
-- raw_summary: str | None
-- raw_payload_hash: str
-- canonical_url: str | None
-- normalized_title_hash: str
-- collection_mode: str
-
-Include helper methods if useful:
-- to_dict()
-
-2. Create src/news_collectors/dedupe.py
-
-Implement deterministic deduplication helpers:
-- canonicalize_url(url: str | None) -> str | None
-- normalize_title(title: str) -> str
-- hash_text(value: str) -> str
-- compute_payload_hash(payload: dict) -> str
-- assign_duplicate_group_ids(items: list[NewsItem]) -> list[dict]
-
-Rules:
-- URL canonicalization should remove common tracking query parameters such as utm_source, utm_medium, utm_campaign, utm_term, utm_content.
-- Normalize titles by lowercasing, stripping whitespace, collapsing repeated spaces, and removing simple punctuation.
-- Duplicate grouping should prefer canonical_url when available; otherwise use normalized_title_hash.
-- Do not use fuzzy matching yet.
-
-3. Create src/news_collectors/rss_collector.py
-
-Implement a lightweight RSS collector using feedparser.
-
-Functions:
-- collect_from_feed(feed_url: str, source_name: str) -> list[NewsItem]
-- collect_from_feeds(feeds: list[dict]) -> list[NewsItem]
-
-Each feed config dict should include:
+Phase 1, Phase 2, and Phase 3 are complete.
+Phase 3 produces data/processed/news_signals_YYYYMMDD.csv from raw news metadata.
+Each news signal has:
+- news_id
+- duplicate_group_id
 - source
+- title
 - url
+- published_at_utc
+- retrieved_at_utc
+- taiwan_trading_date
+- sector
+- theme
+- us_tickers
+- sentiment_label
+- sentiment_score
+- relevance_label
+- relevance_score
+- confidence
+- classification_method
+- matched_rules
+- reasoning_short
+
+Goal:
+Map each relevant U.S. news signal to Taiwan-listed tickers, Taiwan baskets, or proxy rows using only the deterministic seed mapping table:
+
+data/processed/ticker_mapping_seed.csv
+
+Output:
+data/processed/taiwan_impact_candidates_YYYYMMDD.csv
+
+Required output columns:
+- news_id
+- duplicate_group_id
+- source
+- title
+- url
+- published_at_utc
+- retrieved_at_utc
+- taiwan_trading_date
+- sector
+- theme
+- us_tickers
+- sentiment_label
+- sentiment_score
+- relevance_label
+- relevance_score
+- signal_confidence
+- taiwan_target
+- taiwan_target_type
+- taiwan_ticker
+- taiwan_company
+- taiwan_sector
+- relationship_type
+- mapping_confidence
+- assumption_flag
+- mapping_notes
+- directional_impact_label
+- impact_score
+- combined_confidence
+- mapping_method
+- reasoning_short
+
+Definitions:
+- taiwan_target_type should be one of:
+    ticker
+    basket
+    proxy
+    unmapped
+
+- taiwan_ticker should be:
+    a real Taiwan ticker such as 2330.TW,
+    a BASKET:* marker,
+    a PROXY:* marker,
+    or empty for unmapped rows.
+
+- directional_impact_label should be one of:
+    potentially_positive
+    potentially_negative
+    neutral
+    irrelevant
+    unmapped
 
 Rules:
-- Store only metadata and RSS-provided summary/snippet.
-- Do not fetch full article body.
-- Do not scrape article pages.
-- Convert timestamps to UTC using existing time_utils where practical.
-- If published timestamp is missing or ambiguous, store None and continue.
-- retrieved_at_utc should be current UTC time.
-- collection_mode should be "rss".
+- If sentiment_label is positive and relevance_score > 0, directional_impact_label = potentially_positive.
+- If sentiment_label is negative and relevance_score > 0, directional_impact_label = potentially_negative.
+- If sentiment_label is neutral or mixed, directional_impact_label = neutral.
+- If relevance_label is irrelevant or sector is Irrelevant, directional_impact_label = irrelevant and no Taiwan mapping rows should be created by default.
+- Do not use words like buy, sell, guaranteed, will rise, or will fall.
+- Use cautious language only.
 
-4. Create src/news_collectors/io.py
+Impact score:
+- impact_score = sentiment_score * relevance_score * mapping_confidence
+- Clamp impact_score to [-1, 1].
+- combined_confidence = signal_confidence * mapping_confidence
+- Clamp combined_confidence to [0, 1].
+
+Implementation requirements:
+
+1. Create src/mapping/ticker_mapper.py
 
 Implement:
-- save_news_csv(items: list[dict] | list[NewsItem], output_path)
-- load_news_csv(input_path)
-- load_fixture_news(path)
+- load_mapping_table(path=None) -> pandas.DataFrame
+- parse_pipe_or_json_list(value) -> list[str]
+- determine_target_type(taiwan_ticker: str) -> str
+- map_signal_row(signal_row: dict, mapping_df: pandas.DataFrame) -> list[dict]
+- map_signals_dataframe(signals_df: pandas.DataFrame, mapping_df: pandas.DataFrame) -> pandas.DataFrame
 
-5. Create data/fixtures/sample_raw_news.json
+Mapping behavior:
+- Use only data/processed/ticker_mapping_seed.csv.
+- Match by us_ticker against the us_tickers field from the signal.
+- The us_tickers field may be pipe-delimited or JSON-like depending on Phase 3 serialization; handle both.
+- If a signal contains multiple U.S. tickers, include all matching mapping rows.
+- If no mapping is found for a relevant signal, create one unmapped row with:
+    taiwan_target_type = unmapped
+    directional_impact_label = unmapped
+    mapping_confidence = 0
+    combined_confidence = 0
+    impact_score = 0
+    reasoning_short explaining that no deterministic mapping was found.
+- If signal is irrelevant, skip mapping rows by default.
+- Do not invent Taiwan tickers.
+- Do not infer new relationships beyond the seed mapping table.
 
-Add a small fixture with about 8-12 sample news records.
-Include:
-- Nvidia / AI server headline
-- AMD headline
-- Apple supply-chain headline
-- Micron / memory headline
-- Fed or rate headline
-- oil headline
-- irrelevant headline
-- duplicated headline with tracking URL
-- duplicate title with different URL
+2. Create src/mapping/io.py
 
-Make fixture data synthetic or clearly sample-like. Do not copy long copyrighted article text.
+Implement:
+- save_impact_candidates_csv(df, output_path)
+- load_impact_candidates_csv(path)
 
-6. Create scripts/collect_news.py
+3. Create scripts/map_taiwan_impacts.py
 
 CLI arguments:
-- --mode fixture or rss
-- --fixture-path
+- --input
+- --mapping
 - --output
 - --date
-- --feed-config
+- --include-irrelevant optional boolean flag, default false
 
 Behavior:
-- fixture mode loads data/fixtures/sample_raw_news.json
-- rss mode loads RSS feed config from a JSON file
-- assigns duplicate groups
-- saves CSV to data/raw/news_YYYYMMDD.csv unless output is provided
-- prints a small summary:
-    total rows
-    unique duplicate groups
-    number with missing published_at_utc
+- Load news_signals CSV.
+- Load ticker_mapping_seed.csv.
+- Map signals to Taiwan impact candidates.
+- Save to data/processed/taiwan_impact_candidates_YYYYMMDD.csv unless output is provided.
+- Print summary:
+    total input signals
+    total mapped candidate rows
+    unmapped relevant signals
+    count by taiwan_target_type
+    count by directional_impact_label
+    top Taiwan targets by candidate count
     output path
 
-7. Create config for example RSS feeds
+4. Tests
 
-Create data/fixtures/rss_feeds_example.json with a small example list.
-Use source names and feed URLs only.
-Keep this as an example config.
-Do not require these feeds to be reachable during tests.
+Create tests/test_ticker_mapper.py:
+- A positive NVDA signal maps to at least one Taiwan target.
+- A positive NVDA signal produces potentially_positive impact.
+- A negative AMD signal produces potentially_negative impact.
+- AAPL signal maps to Apple Supply Chain related target(s).
+- Irrelevant signal produces no rows by default.
+- Unknown relevant U.S. ticker produces one unmapped row.
+- combined_confidence is within [0, 1].
+- impact_score is within [-1, 1].
+- No output reasoning contains buy, sell, guaranteed, will rise, or will fall.
 
-8. Add tests:
+Create tests/test_map_taiwan_impacts_script_fixture.py:
+- Run fixture collection.
+- Run rule-based classification.
+- Run Taiwan mapping script.
+- Assert output CSV exists.
+- Assert required output columns exist.
+- Assert mapping_method is deterministic, such as "seed_mapping_v1".
+- Assert no invented Taiwan tickers appear.
+- Assert at least one NVDA-derived Taiwan candidate exists if the fixture contains an NVDA signal.
 
-tests/test_news_dedupe.py:
-- test URL canonicalization removes utm parameters
-- test title normalization works
-- test duplicate grouping catches same canonical URL
-- test duplicate grouping catches same normalized title when URL is missing
+5. Update README.md
 
-tests/test_news_fixture_io.py:
-- test fixture loads
-- test fixture can be converted into NewsItem-like records
-- test saving and loading CSV works
-
-tests/test_collect_news_script_fixture.py:
-- run the script in fixture mode using subprocess or direct function if easier
-- assert it creates a CSV
-- assert required columns exist
-- assert duplicate_group_id exists
-
-9. Update README.md
-
-Add Phase 2 usage examples:
+Add Phase 4 usage examples:
 
 PowerShell:
-python scripts/collect_news.py --mode fixture --date 2026-01-15
-python -m pytest
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe -m pytest
 
 Clarify:
-- fixture mode is reproducible
-- RSS mode is live and may depend on network/source availability
-- no full article scraping
-- no trading recommendations
+- Phase 4 uses deterministic seed mapping only.
+- Unknown relationships become unmapped rather than invented.
+- This is not a trading recommendation system.
+- Output rows are potential research candidates requiring validation.
 
-10. Keep requirements.txt lightweight.
-feedparser should already be present. Do not add heavy packages.
+6. Update .gitignore if needed
+
+Generated files should not pollute source control:
+- data/processed/news_signals_*.csv
+- data/processed/taiwan_impact_candidates_*.csv
 
 Validation:
 Run:
-python -m pytest
-python scripts/collect_news.py --mode fixture --date 2026-01-15
-python -c "from src.news_collectors.base import NewsItem; print('news import ok')"
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe -c "from src.mapping.ticker_mapper import load_mapping_table; print('mapping import ok')"
+
+If venv is unavailable, use the same Python executable that was used for Phase 3 tests, but document the exact command used.
 
 Final response:
 Summarize:
@@ -174,6 +227,6 @@ Summarize:
 2. Tests run and results.
 3. Example command output.
 4. Known limitations.
-5. What remains for Phase 3.
+5. What remains for Phase 5.
 
-Do not implement Phase 3.
+Do not implement Phase 5.

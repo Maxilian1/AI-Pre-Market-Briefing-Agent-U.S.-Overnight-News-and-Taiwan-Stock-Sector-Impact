@@ -1,1 +1,1 @@
-"""Signal construction package placeholder for later phases."""
+"""Rule-based news signal classification package."""

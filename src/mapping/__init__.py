@@ -1,1 +1,1 @@
-"""Ticker and theme mapping package placeholder for later phases."""
+"""Deterministic Taiwan ticker and target mapping package."""

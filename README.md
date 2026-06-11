@@ -33,6 +33,29 @@ Phase 2 adds the raw news metadata collection layer:
 
 Phase 2 still does not implement LLM classification, sentiment scoring, Taiwan ticker mapping from news, market data ingestion, backtesting, full article scraping, paywalled scraping, or trading recommendations.
 
+## Phase 3 Status
+
+Phase 3 adds deterministic rule-based classification from raw news metadata into a structured research feature table:
+
+- U.S. ticker keyword matching for the initial semiconductor / AI / hardware universe.
+- Sector and theme labels for semiconductor, AI infrastructure, memory, Apple supply chain, cloud/data center, macro, energy, and irrelevant items.
+- Simple rule-based sentiment labels and bounded scores.
+- Relevance labels and confidence scores for research filtering.
+- Default duplicate suppression by `duplicate_group_id` to avoid duplicated signal inflation.
+
+Phase 3 uses transparent rules, not LLMs. It does not infer Taiwan tickers, generate Taiwan impact reports, ingest market data, run backtests, or make trading recommendations.
+
+## Phase 4 Status
+
+Phase 4 adds deterministic Taiwan impact candidate mapping from structured U.S. news signals:
+
+- Uses only `data/processed/ticker_mapping_seed.csv`.
+- Maps matched U.S. tickers to seed Taiwan tickers, basket markers, or proxy markers.
+- Creates explicit `unmapped` rows for relevant signals with no deterministic seed relationship.
+- Computes bounded impact and confidence fields for research filtering.
+
+Phase 4 does not collect live news, call LLM APIs, ingest market data, run backtests, generate full pre-market reports, or make trading recommendations. Output rows are potential research candidates requiring validation.
+
 ## Project Structure
 
 ```text
@@ -76,10 +99,37 @@ Collect fixture news metadata:
 python scripts/collect_news.py --mode fixture --date 2026-01-15
 ```
 
+Classify fixture news metadata into research features:
+
+```powershell
+python scripts/classify_news.py --input data/raw/news_20260115.csv --date 2026-01-15
+```
+
+Map classified signals to Taiwan impact candidates:
+
+```powershell
+python scripts/map_taiwan_impacts.py --input data/processed/news_signals_20260115.csv --date 2026-01-15
+```
+
+Phase 4 PowerShell examples using a project virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe -m pytest
+```
+
 Run the Phase 2 news import check:
 
 ```powershell
 python -c "from src.news_collectors.base import NewsItem; print('news import ok')"
+```
+
+Run the Phase 3 classifier import check:
+
+```powershell
+python -c "from src.signals.rule_based_classifier import classify_headline; print(classify_headline('Nvidia rises on strong AI chip demand'))"
 ```
 
 Fixture mode is reproducible and uses synthetic sample metadata from `data/fixtures/sample_raw_news.json`. RSS mode is live and may depend on network and source availability:
@@ -89,6 +139,10 @@ python scripts/collect_news.py --mode rss --feed-config data/fixtures/rss_feeds_
 ```
 
 RSS mode stores feed-provided metadata and snippets only. It does not fetch full article bodies or scrape article pages.
+
+Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
+
+Taiwan impact candidate output is also saved under `data/processed/`. Unknown relationships become `unmapped` rather than invented.
 
 ## Research Guardrails
 
