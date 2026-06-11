@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+
+# Local artifacts
+data/raw/*
+data/reports/*
+!data/raw/.gitkeep
+!data/reports/.gitkeep
+
+# Notebook checkpoints
+.ipynb_checkpoints/

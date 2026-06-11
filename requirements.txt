@@ -1,0 +1,10 @@
+pandas
+numpy
+requests
+feedparser
+yfinance
+scikit-learn
+statsmodels
+matplotlib
+pytest
+python-dotenv

@@ -1,0 +1,33 @@
+us_ticker,us_company,theme,taiwan_ticker,taiwan_company,taiwan_sector,relationship_type,confidence,assumption_flag,notes
+TSM,Taiwan Semiconductor Manufacturing ADR,foundry,2330.TW,TSMC,Semiconductor Foundry,direct ADR/listed company relationship,high,False,Direct ADR relationship; still validate data alignment before research use.
+NVDA,NVIDIA,AI accelerators,2330.TW,TSMC,Semiconductor Foundry,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+NVDA,NVIDIA,AI accelerators,3711.TW,ASE Technology Holding,Semiconductor Packaging and Testing,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+NVDA,NVIDIA,AI accelerators,2454.TW,MediaTek,Semiconductor Design,sector read-through,low,True,Seed research assumption; requires validation.
+AMD,Advanced Micro Devices,AI accelerators and CPUs,2330.TW,TSMC,Semiconductor Foundry,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+AMD,Advanced Micro Devices,AI accelerators and CPUs,3711.TW,ASE Technology Holding,Semiconductor Packaging and Testing,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+AVGO,Broadcom,networking and custom silicon,2330.TW,TSMC,Semiconductor Foundry,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+AVGO,Broadcom,networking and custom silicon,3711.TW,ASE Technology Holding,Semiconductor Packaging and Testing,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+ASML,ASML Holding,semiconductor equipment,2330.TW,TSMC,Semiconductor Foundry,supplier/customer/sector read-through,medium,True,Seed research assumption; requires validation.
+ASML,ASML Holding,semiconductor equipment,2303.TW,UMC,Semiconductor Foundry,supplier/customer/sector read-through,low,True,Seed research assumption; requires validation.
+MU,Micron Technology,memory,2408.TW,Nanya Technology,Memory,sector read-through,medium,True,Seed research assumption; requires validation.
+MU,Micron Technology,memory,2330.TW,TSMC,Semiconductor Foundry,sector read-through,low,True,Seed research assumption; requires validation.
+INTC,Intel,processors and foundry,2330.TW,TSMC,Semiconductor Foundry,sector read-through,medium,True,Seed research assumption; requires validation.
+INTC,Intel,processors and foundry,2303.TW,UMC,Semiconductor Foundry,sector read-through,low,True,Seed research assumption; requires validation.
+NVDA,NVIDIA,AI server demand,2317.TW,Hon Hai Precision Industry,AI Server Assembly,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+NVDA,NVIDIA,AI server demand,2382.TW,Quanta Computer,AI Server and ODM,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+NVDA,NVIDIA,AI server demand,6669.TW,Wiwynn,AI Server and Cloud Infrastructure,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+AMD,Advanced Micro Devices,AI server demand,2382.TW,Quanta Computer,AI Server and ODM,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+AMD,Advanced Micro Devices,AI server demand,6669.TW,Wiwynn,AI Server and Cloud Infrastructure,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+MSFT,Microsoft,cloud capex and AI infrastructure,2317.TW,Hon Hai Precision Industry,AI Server Assembly,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+MSFT,Microsoft,cloud capex and AI infrastructure,2382.TW,Quanta Computer,AI Server and ODM,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+MSFT,Microsoft,cloud capex and AI infrastructure,6669.TW,Wiwynn,AI Server and Cloud Infrastructure,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+AMZN,Amazon,cloud capex and AI infrastructure,2382.TW,Quanta Computer,AI Server and ODM,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+AMZN,Amazon,cloud capex and AI infrastructure,6669.TW,Wiwynn,AI Server and Cloud Infrastructure,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+GOOGL,Alphabet,cloud capex and AI infrastructure,2382.TW,Quanta Computer,AI Server and ODM,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+GOOGL,Alphabet,cloud capex and AI infrastructure,6669.TW,Wiwynn,AI Server and Cloud Infrastructure,AI server/data-center demand read-through,medium,True,Seed research assumption; requires validation.
+AAPL,Apple,Apple hardware supply chain,2317.TW,Hon Hai Precision Industry,Apple Supply Chain,customer/supply-chain read-through,medium,True,Seed research assumption; requires validation.
+AAPL,Apple,Apple hardware supply chain,2382.TW,Quanta Computer,Apple Supply Chain,customer/supply-chain read-through,low,True,Seed research assumption; requires validation.
+AAPL,Apple,Apple hardware supply chain,2357.TW,ASUS,Apple Supply Chain,sector read-through,low,True,Seed research assumption; requires validation.
+QQQ,Invesco QQQ Trust,Nasdaq market control,PROXY:QQQ,Nasdaq / QQQ Control,Market Control,control proxy,medium,True,Seed research assumption; used only as a control/proxy and requires validation.
+SOXX,iShares Semiconductor ETF,semiconductor sector control,PROXY:SOXX,Semiconductor ETF Control,Market Control,control proxy,medium,True,Seed research assumption; used only as a control/proxy and requires validation.
+SMH,VanEck Semiconductor ETF,semiconductor sector control,PROXY:SMH,Semiconductor ETF Control,Market Control,control proxy,medium,True,Seed research assumption; used only as a control/proxy and requires validation.

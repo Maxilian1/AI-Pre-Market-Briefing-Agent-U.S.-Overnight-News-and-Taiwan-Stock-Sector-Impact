@@ -1,0 +1,82 @@
+[
+  {
+    "source": "Synthetic Fixture Wire",
+    "title": "Nvidia AI server demand lifts attention on accelerator supply chain",
+    "url": "https://example.com/news/nvidia-ai-server-demand?utm_source=newsletter&utm_medium=email",
+    "published_at_utc": "2026-01-14T22:15:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample metadata-only summary about AI server demand. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Fixture Wire",
+    "title": "AMD introduces new data center accelerator roadmap",
+    "url": "https://example.com/news/amd-data-center-accelerator",
+    "published_at_utc": "2026-01-14T21:40:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample metadata-only summary about AMD data center chips. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Fixture Wire",
+    "title": "Apple suppliers prepare for updated hardware production schedule",
+    "url": "https://example.com/news/apple-supplier-production-schedule",
+    "published_at_utc": "2026-01-14T20:05:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample metadata-only summary about Apple hardware supply chain. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Fixture Wire",
+    "title": "Micron memory outlook draws focus after industry inventory update",
+    "url": "https://example.com/news/micron-memory-outlook",
+    "published_at_utc": "2026-01-14T23:10:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample metadata-only summary about memory conditions. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Macro Feed",
+    "title": "Fed officials discuss rate outlook ahead of inflation data",
+    "url": "https://example.com/macro/fed-rate-outlook",
+    "published_at_utc": "2026-01-14T19:00:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample metadata-only macro summary. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Commodities Feed",
+    "title": "Oil prices steady as traders weigh shipping risks",
+    "url": "https://example.com/commodities/oil-prices-shipping-risks",
+    "published_at_utc": "2026-01-14T18:30:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample metadata-only commodities summary. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic General Feed",
+    "title": "Local sports team announces spring training schedule",
+    "url": "https://example.com/general/sports-spring-training",
+    "published_at_utc": "2026-01-14T17:45:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Sample irrelevant headline for fixture filtering later. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Fixture Wire",
+    "title": "Nvidia AI server demand lifts attention on accelerator supply chain",
+    "url": "https://example.com/news/nvidia-ai-server-demand?utm_campaign=social&utm_content=copy",
+    "published_at_utc": "2026-01-14T22:16:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Duplicate sample with tracking URL. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Fixture Wire",
+    "title": "Duplicate title test for RSS metadata",
+    "url": null,
+    "published_at_utc": "2026-01-14T16:20:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "First sample record without URL. Synthetic fixture text."
+  },
+  {
+    "source": "Synthetic Partner Feed",
+    "title": "Duplicate title test for RSS metadata",
+    "url": null,
+    "published_at_utc": "2026-01-14T16:22:00+00:00",
+    "retrieved_at_utc": "2026-01-15T00:30:00+00:00",
+    "raw_summary": "Second sample record without URL for title-hash dedupe. Synthetic fixture text."
+  }
+]

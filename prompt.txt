@@ -1,0 +1,179 @@
+Read AGENTS.md, README.md, and research_design.md first.
+
+Task:
+Implement Phase 2 only: fixture-driven raw news schema, deterministic deduplication, and a public RSS metadata collector.
+
+Important:
+Do not implement LLM classification.
+Do not implement sentiment scoring.
+Do not implement Taiwan ticker mapping from news yet.
+Do not implement market data ingestion.
+Do not implement backtesting.
+Do not scrape full article bodies.
+Do not scrape paywalled websites.
+Do not make trading recommendations.
+
+Goal:
+Create a reproducible raw news collection layer for the Taiwan pre-market news signal research pipeline.
+
+Context:
+Phase 1 scaffold and smoke tests already pass.
+The project is focused on overnight U.S. semiconductor / AI financial news and possible Taiwan semiconductor / AI supply-chain impact, but Phase 2 should only collect raw metadata.
+
+Requirements:
+
+1. Create src/news_collectors/base.py
+
+Define a NewsItem dataclass with fields:
+- news_id: str
+- source: str
+- title: str
+- url: str | None
+- published_at_utc: str | None
+- retrieved_at_utc: str
+- raw_summary: str | None
+- raw_payload_hash: str
+- canonical_url: str | None
+- normalized_title_hash: str
+- collection_mode: str
+
+Include helper methods if useful:
+- to_dict()
+
+2. Create src/news_collectors/dedupe.py
+
+Implement deterministic deduplication helpers:
+- canonicalize_url(url: str | None) -> str | None
+- normalize_title(title: str) -> str
+- hash_text(value: str) -> str
+- compute_payload_hash(payload: dict) -> str
+- assign_duplicate_group_ids(items: list[NewsItem]) -> list[dict]
+
+Rules:
+- URL canonicalization should remove common tracking query parameters such as utm_source, utm_medium, utm_campaign, utm_term, utm_content.
+- Normalize titles by lowercasing, stripping whitespace, collapsing repeated spaces, and removing simple punctuation.
+- Duplicate grouping should prefer canonical_url when available; otherwise use normalized_title_hash.
+- Do not use fuzzy matching yet.
+
+3. Create src/news_collectors/rss_collector.py
+
+Implement a lightweight RSS collector using feedparser.
+
+Functions:
+- collect_from_feed(feed_url: str, source_name: str) -> list[NewsItem]
+- collect_from_feeds(feeds: list[dict]) -> list[NewsItem]
+
+Each feed config dict should include:
+- source
+- url
+
+Rules:
+- Store only metadata and RSS-provided summary/snippet.
+- Do not fetch full article body.
+- Do not scrape article pages.
+- Convert timestamps to UTC using existing time_utils where practical.
+- If published timestamp is missing or ambiguous, store None and continue.
+- retrieved_at_utc should be current UTC time.
+- collection_mode should be "rss".
+
+4. Create src/news_collectors/io.py
+
+Implement:
+- save_news_csv(items: list[dict] | list[NewsItem], output_path)
+- load_news_csv(input_path)
+- load_fixture_news(path)
+
+5. Create data/fixtures/sample_raw_news.json
+
+Add a small fixture with about 8-12 sample news records.
+Include:
+- Nvidia / AI server headline
+- AMD headline
+- Apple supply-chain headline
+- Micron / memory headline
+- Fed or rate headline
+- oil headline
+- irrelevant headline
+- duplicated headline with tracking URL
+- duplicate title with different URL
+
+Make fixture data synthetic or clearly sample-like. Do not copy long copyrighted article text.
+
+6. Create scripts/collect_news.py
+
+CLI arguments:
+- --mode fixture or rss
+- --fixture-path
+- --output
+- --date
+- --feed-config
+
+Behavior:
+- fixture mode loads data/fixtures/sample_raw_news.json
+- rss mode loads RSS feed config from a JSON file
+- assigns duplicate groups
+- saves CSV to data/raw/news_YYYYMMDD.csv unless output is provided
+- prints a small summary:
+    total rows
+    unique duplicate groups
+    number with missing published_at_utc
+    output path
+
+7. Create config for example RSS feeds
+
+Create data/fixtures/rss_feeds_example.json with a small example list.
+Use source names and feed URLs only.
+Keep this as an example config.
+Do not require these feeds to be reachable during tests.
+
+8. Add tests:
+
+tests/test_news_dedupe.py:
+- test URL canonicalization removes utm parameters
+- test title normalization works
+- test duplicate grouping catches same canonical URL
+- test duplicate grouping catches same normalized title when URL is missing
+
+tests/test_news_fixture_io.py:
+- test fixture loads
+- test fixture can be converted into NewsItem-like records
+- test saving and loading CSV works
+
+tests/test_collect_news_script_fixture.py:
+- run the script in fixture mode using subprocess or direct function if easier
+- assert it creates a CSV
+- assert required columns exist
+- assert duplicate_group_id exists
+
+9. Update README.md
+
+Add Phase 2 usage examples:
+
+PowerShell:
+python scripts/collect_news.py --mode fixture --date 2026-01-15
+python -m pytest
+
+Clarify:
+- fixture mode is reproducible
+- RSS mode is live and may depend on network/source availability
+- no full article scraping
+- no trading recommendations
+
+10. Keep requirements.txt lightweight.
+feedparser should already be present. Do not add heavy packages.
+
+Validation:
+Run:
+python -m pytest
+python scripts/collect_news.py --mode fixture --date 2026-01-15
+python -c "from src.news_collectors.base import NewsItem; print('news import ok')"
+
+Final response:
+Summarize:
+1. Files created or modified.
+2. Tests run and results.
+3. Example command output.
+4. Known limitations.
+5. What remains for Phase 3.
+
+Do not implement Phase 3.

@@ -1,0 +1,10 @@
+[
+  {
+    "source": "Yahoo Finance",
+    "url": "https://finance.yahoo.com/news/rssindex"
+  },
+  {
+    "source": "Nasdaq Markets",
+    "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets"
+  }
+]
