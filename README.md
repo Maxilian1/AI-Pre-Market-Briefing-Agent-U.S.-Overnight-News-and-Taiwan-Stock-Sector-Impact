@@ -56,6 +56,17 @@ Phase 4 adds deterministic Taiwan impact candidate mapping from structured U.S. 
 
 Phase 4 does not collect live news, call LLM APIs, ingest market data, run backtests, generate full pre-market reports, or make trading recommendations. Output rows are potential research candidates requiring validation.
 
+## Phase 5 Status
+
+Phase 5 adds deterministic Markdown research reporting:
+
+- Loads classified U.S. news signals and Taiwan impact candidates.
+- Summarizes overnight U.S. themes, Taiwan watchlist candidates, directional labels, confidence, limitations, and source provenance.
+- Uses deterministic tables and formatting only.
+- Saves reports under `data/reports/`.
+
+Phase 5 is not LLM-written, is not a trading recommendation system, and still requires market validation.
+
 ## Project Structure
 
 ```text
@@ -120,6 +131,16 @@ Phase 4 PowerShell examples using a project virtual environment:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
+Phase 5 PowerShell examples using a project virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260115.csv --candidates data\processed\taiwan_impact_candidates_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe -m pytest
+```
+
 Run the Phase 2 news import check:
 
 ```powershell
@@ -143,6 +164,8 @@ RSS mode stores feed-provided metadata and snippets only. It does not fetch full
 Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
 
 Taiwan impact candidate output is also saved under `data/processed/`. Unknown relationships become `unmapped` rather than invented.
+
+Markdown report output is saved under `data/reports/`. The report is a deterministic research briefing and requires market validation.
 
 ## Research Guardrails
 

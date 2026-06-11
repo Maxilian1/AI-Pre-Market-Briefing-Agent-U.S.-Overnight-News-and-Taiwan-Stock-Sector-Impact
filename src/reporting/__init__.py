@@ -1,1 +1,1 @@
-"""Reporting package placeholder for later phases."""
+"""Deterministic Markdown reporting package."""

@@ -23,6 +23,7 @@ data/processed/taiwan_impact_candidates_*.csv
 data/reports/*
 !data/raw/.gitkeep
 !data/reports/.gitkeep
+!data/fixtures/sample_report.md
 
 # Notebook checkpoints
 .ipynb_checkpoints/

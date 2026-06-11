@@ -1,215 +1,220 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 4 only: deterministic Taiwan ticker / sector impact mapping from structured U.S. news signals.
+Implement Phase 5 only: deterministic Taiwan pre-market Markdown research report generator.
 
 Important:
-Do not implement LLM classification.
+Do not implement LLM generation.
 Do not call OpenAI or any external LLM API.
 Do not collect live news.
 Do not implement market data ingestion.
 Do not implement backtesting.
-Do not generate full pre-market Markdown reports yet.
 Do not make trading recommendations.
+Do not use words like buy, sell, guaranteed, will rise, will fall, target price, or must trade.
 
 Context:
-Phase 1, Phase 2, and Phase 3 are complete.
-Phase 3 produces data/processed/news_signals_YYYYMMDD.csv from raw news metadata.
-Each news signal has:
-- news_id
-- duplicate_group_id
-- source
-- title
-- url
-- published_at_utc
-- retrieved_at_utc
-- taiwan_trading_date
-- sector
-- theme
-- us_tickers
-- sentiment_label
-- sentiment_score
-- relevance_label
-- relevance_score
-- confidence
-- classification_method
-- matched_rules
-- reasoning_short
+Phase 1 through Phase 4 are complete.
+Current test suite passes.
+Phase 3 produces:
+data/processed/news_signals_YYYYMMDD.csv
 
-Goal:
-Map each relevant U.S. news signal to Taiwan-listed tickers, Taiwan baskets, or proxy rows using only the deterministic seed mapping table:
-
-data/processed/ticker_mapping_seed.csv
-
-Output:
+Phase 4 produces:
 data/processed/taiwan_impact_candidates_YYYYMMDD.csv
 
-Required output columns:
-- news_id
-- duplicate_group_id
-- source
-- title
-- url
-- published_at_utc
-- retrieved_at_utc
-- taiwan_trading_date
-- sector
-- theme
-- us_tickers
-- sentiment_label
-- sentiment_score
-- relevance_label
-- relevance_score
-- signal_confidence
-- taiwan_target
-- taiwan_target_type
-- taiwan_ticker
-- taiwan_company
-- taiwan_sector
-- relationship_type
-- mapping_confidence
-- assumption_flag
-- mapping_notes
-- directional_impact_label
-- impact_score
-- combined_confidence
-- mapping_method
-- reasoning_short
+Now we need a deterministic Markdown report generator that summarizes:
+1. overnight U.S. news themes
+2. potentially affected Taiwan baskets / sectors / tickers
+3. positive / negative / neutral candidate impacts
+4. confidence and limitations
+5. source provenance
 
-Definitions:
-- taiwan_target_type should be one of:
-    ticker
-    basket
-    proxy
-    unmapped
+Goal:
+Generate:
+data/reports/taiwan_premarket_report_YYYYMMDD.md
 
-- taiwan_ticker should be:
-    a real Taiwan ticker such as 2330.TW,
-    a BASKET:* marker,
-    a PROXY:* marker,
-    or empty for unmapped rows.
+Inputs:
+- data/processed/news_signals_YYYYMMDD.csv
+- data/processed/taiwan_impact_candidates_YYYYMMDD.csv
 
-- directional_impact_label should be one of:
-    potentially_positive
-    potentially_negative
-    neutral
-    irrelevant
-    unmapped
+Output:
+- data/reports/taiwan_premarket_report_YYYYMMDD.md
 
-Rules:
-- If sentiment_label is positive and relevance_score > 0, directional_impact_label = potentially_positive.
-- If sentiment_label is negative and relevance_score > 0, directional_impact_label = potentially_negative.
-- If sentiment_label is neutral or mixed, directional_impact_label = neutral.
-- If relevance_label is irrelevant or sector is Irrelevant, directional_impact_label = irrelevant and no Taiwan mapping rows should be created by default.
-- Do not use words like buy, sell, guaranteed, will rise, or will fall.
-- Use cautious language only.
+Report title:
+Taiwan Pre-Market Research Brief
 
-Impact score:
-- impact_score = sentiment_score * relevance_score * mapping_confidence
-- Clamp impact_score to [-1, 1].
-- combined_confidence = signal_confidence * mapping_confidence
-- Clamp combined_confidence to [0, 1].
+Report structure:
+1. Header
+   - report date
+   - generated timestamp
+   - project name
+   - research disclaimer
+
+2. Executive Summary
+   - number of raw/classified signals
+   - number of mapped Taiwan impact candidates
+   - top themes
+   - dominant directional labels
+   - short cautious summary
+
+3. Overnight U.S. News Themes
+   - grouped by sector and theme
+   - include count of signals
+   - include representative headlines
+   - include sentiment labels
+
+4. Taiwan Watchlist Candidates
+   - grouped by taiwan_target_type:
+       ticker
+       basket
+       proxy
+       unmapped
+   - include Taiwan target, sector, directional_impact_label, combined_confidence, impact_score
+   - sort by absolute impact_score descending, then combined_confidence descending
+
+5. Potentially Positive Candidates
+   - list top candidates with cautious language
+
+6. Potentially Negative Candidates
+   - list top candidates with cautious language
+
+7. Neutral / Unmapped / Requires Review
+   - include neutral and unmapped candidates
+   - explain that unmapped means no deterministic seed mapping was found
+
+8. Source Provenance
+   - list source, title, URL if available, published_at_utc
+   - no full article body
+   - no article scraping
+
+9. Limitations
+   - rule-based classifier
+   - deterministic seed mapping only
+   - no market validation yet
+   - possible timestamp/source limitations
+   - not investment advice
+
+10. Next Research Step
+   - mention that Phase 6 will add market data and backtest validation
 
 Implementation requirements:
 
-1. Create src/mapping/ticker_mapper.py
+1. Create src/reporting/report_generator.py
 
 Implement:
-- load_mapping_table(path=None) -> pandas.DataFrame
-- parse_pipe_or_json_list(value) -> list[str]
-- determine_target_type(taiwan_ticker: str) -> str
-- map_signal_row(signal_row: dict, mapping_df: pandas.DataFrame) -> list[dict]
-- map_signals_dataframe(signals_df: pandas.DataFrame, mapping_df: pandas.DataFrame) -> pandas.DataFrame
+- load_report_inputs(signals_path, candidates_path) -> tuple[pandas.DataFrame, pandas.DataFrame]
+- summarize_themes(signals_df) -> pandas.DataFrame or list[dict]
+- summarize_candidates(candidates_df) -> pandas.DataFrame or list[dict]
+- render_markdown_report(signals_df, candidates_df, report_date: str | None = None) -> str
+- generate_report(signals_path, candidates_path, output_path, report_date: str | None = None) -> str
 
-Mapping behavior:
-- Use only data/processed/ticker_mapping_seed.csv.
-- Match by us_ticker against the us_tickers field from the signal.
-- The us_tickers field may be pipe-delimited or JSON-like depending on Phase 3 serialization; handle both.
-- If a signal contains multiple U.S. tickers, include all matching mapping rows.
-- If no mapping is found for a relevant signal, create one unmapped row with:
-    taiwan_target_type = unmapped
-    directional_impact_label = unmapped
-    mapping_confidence = 0
-    combined_confidence = 0
-    impact_score = 0
-    reasoning_short explaining that no deterministic mapping was found.
-- If signal is irrelevant, skip mapping rows by default.
-- Do not invent Taiwan tickers.
-- Do not infer new relationships beyond the seed mapping table.
+Rules:
+- Deterministic output.
+- No LLM.
+- No live API calls.
+- No trading recommendations.
+- Use cautious language:
+    potentially positive
+    potentially negative
+    neutral
+    watchlist candidate
+    requires validation
+    deterministic mapping
+    research signal
+- Do not use forbidden language:
+    buy
+    sell
+    guaranteed
+    will rise
+    will fall
+    target price
+    must trade
 
-2. Create src/mapping/io.py
+2. Create src/reporting/io.py
 
 Implement:
-- save_impact_candidates_csv(df, output_path)
-- load_impact_candidates_csv(path)
+- save_markdown_report(markdown_text: str, output_path)
+- load_markdown_report(path)
 
-3. Create scripts/map_taiwan_impacts.py
+3. Create scripts/generate_report.py
 
 CLI arguments:
-- --input
-- --mapping
+- --signals
+- --candidates
 - --output
 - --date
-- --include-irrelevant optional boolean flag, default false
 
 Behavior:
-- Load news_signals CSV.
-- Load ticker_mapping_seed.csv.
-- Map signals to Taiwan impact candidates.
-- Save to data/processed/taiwan_impact_candidates_YYYYMMDD.csv unless output is provided.
+- Load signals CSV.
+- Load Taiwan impact candidates CSV.
+- Generate Markdown report.
+- Save to data/reports/taiwan_premarket_report_YYYYMMDD.md unless output is provided.
 - Print summary:
-    total input signals
-    total mapped candidate rows
-    unmapped relevant signals
-    count by taiwan_target_type
-    count by directional_impact_label
-    top Taiwan targets by candidate count
+    report date
+    number of input signals
+    number of impact candidates
+    top 5 themes
+    top 5 Taiwan targets
     output path
 
 4. Tests
 
-Create tests/test_ticker_mapper.py:
-- A positive NVDA signal maps to at least one Taiwan target.
-- A positive NVDA signal produces potentially_positive impact.
-- A negative AMD signal produces potentially_negative impact.
-- AAPL signal maps to Apple Supply Chain related target(s).
-- Irrelevant signal produces no rows by default.
-- Unknown relevant U.S. ticker produces one unmapped row.
-- combined_confidence is within [0, 1].
-- impact_score is within [-1, 1].
-- No output reasoning contains buy, sell, guaranteed, will rise, or will fall.
+Create tests/test_report_generator.py:
+- render_markdown_report returns a string.
+- report contains required section headers:
+    Executive Summary
+    Overnight U.S. News Themes
+    Taiwan Watchlist Candidates
+    Potentially Positive Candidates
+    Potentially Negative Candidates
+    Neutral / Unmapped / Requires Review
+    Source Provenance
+    Limitations
+- report contains non-investment-advice disclaimer.
+- report does not contain forbidden terms:
+    buy
+    sell
+    guaranteed
+    will rise
+    will fall
+    target price
+    must trade
+- report includes at least one representative headline when signals are provided.
+- report handles empty candidates gracefully.
 
-Create tests/test_map_taiwan_impacts_script_fixture.py:
+Create tests/test_generate_report_script_fixture.py:
 - Run fixture collection.
 - Run rule-based classification.
-- Run Taiwan mapping script.
-- Assert output CSV exists.
-- Assert required output columns exist.
-- Assert mapping_method is deterministic, such as "seed_mapping_v1".
-- Assert no invented Taiwan tickers appear.
-- Assert at least one NVDA-derived Taiwan candidate exists if the fixture contains an NVDA signal.
+- Run Taiwan mapping.
+- Run report generation.
+- Assert output Markdown exists.
+- Assert required sections exist.
+- Assert forbidden terms do not appear.
+- Assert no full article body field appears.
+- Assert report includes "requires validation" or similar caveat.
 
 5. Update README.md
 
-Add Phase 4 usage examples:
+Add Phase 5 usage example:
 
 PowerShell:
 .\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
 .\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
 .\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260115.csv --candidates data\processed\taiwan_impact_candidates_20260115.csv --date 2026-01-15
 .\.venv\Scripts\python.exe -m pytest
 
 Clarify:
-- Phase 4 uses deterministic seed mapping only.
-- Unknown relationships become unmapped rather than invented.
-- This is not a trading recommendation system.
-- Output rows are potential research candidates requiring validation.
+- Phase 5 is deterministic Markdown reporting.
+- It is not an LLM-written report.
+- It is not a trading recommendation.
+- The report is a research briefing that requires market validation.
 
 6. Update .gitignore if needed
 
-Generated files should not pollute source control:
-- data/processed/news_signals_*.csv
-- data/processed/taiwan_impact_candidates_*.csv
+Generated report files should not pollute source control:
+- data/reports/taiwan_premarket_report_*.md
+
+Optionally keep data/fixtures/sample_report.md only if created intentionally as fixture documentation.
 
 Validation:
 Run:
@@ -217,16 +222,18 @@ Run:
 .\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
 .\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
 .\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe -c "from src.mapping.ticker_mapper import load_mapping_table; print('mapping import ok')"
+.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260115.csv --candidates data\processed\taiwan_impact_candidates_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe -c "from src.reporting.report_generator import render_markdown_report; print('report import ok')"
 
-If venv is unavailable, use the same Python executable that was used for Phase 3 tests, but document the exact command used.
+If venv is unavailable, use the same Python executable used for Phase 4 tests and document the exact command used.
 
 Final response:
 Summarize:
 1. Files created or modified.
 2. Tests run and results.
 3. Example command output.
-4. Known limitations.
-5. What remains for Phase 5.
+4. Path to generated Markdown report.
+5. Known limitations.
+6. What remains for Phase 6.
 
-Do not implement Phase 5.
+Do not implement Phase 6.
