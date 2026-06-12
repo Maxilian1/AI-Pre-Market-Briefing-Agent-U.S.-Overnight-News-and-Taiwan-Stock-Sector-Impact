@@ -35,6 +35,36 @@ def test_micron_memory_headline_classifies_as_memory_and_includes_mu():
     assert "MU" in result["us_tickers"]
 
 
+def test_sram_ai_world_headline_is_not_irrelevant():
+    result = classify_headline("Why SRAM Chips Are Pulling Ahead in the New AI World")
+
+    assert result["sector"] in {"Memory", "Semiconductor"}
+    assert result["theme"] in {"memory cycle", "AI chip demand", "semiconductor market movement"}
+
+
+def test_ai_chip_stocks_after_selloff_is_not_irrelevant():
+    result = classify_headline("3 Beaten-Down AI Chip Stocks Worth a Closer Look After the Sell-Off")
+
+    assert result["sector"] == "Semiconductor"
+    assert result["theme"] in {"AI chip demand", "semiconductor market movement"}
+
+
+def test_ad_like_homepage_title_remains_irrelevant():
+    result = classify_headline("AI Investing Insights - Official Homepage")
+
+    assert result["sector"] == "Irrelevant"
+    assert result["theme"] == "irrelevant"
+    assert result["relevance_score"] == 0
+
+
+def test_sk_hynix_nvidia_memory_partnership_is_domain_relevant():
+    result = classify_headline("SK hynix and NVIDIA announce multi-year memory partnership")
+
+    assert result["sector"] in {"Memory", "Semiconductor"}
+    assert result["theme"] == "memory cycle"
+    assert "NVDA" in result["us_tickers"]
+
+
 def test_fed_rate_headline_classifies_as_macro():
     result = classify_headline("Fed officials discuss rate outlook before inflation data")
 
@@ -80,6 +110,61 @@ def test_positive_strong_demand_headline_has_positive_sentiment():
 
     assert result["sentiment_label"] == "positive"
     assert result["sentiment_score"] > 0
+
+
+def test_google_news_alone_does_not_trigger_googl():
+    result = classify_headline("Google News")
+
+    assert "GOOGL" not in result["us_tickers"]
+    assert result["sector"] == "Irrelevant"
+
+
+def test_google_cloud_triggers_googl_and_cloud_data_center():
+    result = classify_headline("Google Cloud announces data center expansion")
+
+    assert "GOOGL" in result["us_tickers"]
+    assert result["sector"] == "Cloud / Data Center"
+    assert result["theme"] == "data center capex"
+
+
+def test_alphabet_cloud_capex_triggers_googl_and_cloud_data_center():
+    result = classify_headline("Alphabet raises cloud capex guidance")
+
+    assert "GOOGL" in result["us_tickers"]
+    assert result["sector"] == "Cloud / Data Center"
+    assert result["theme"] == "data center capex"
+
+
+def test_no_cloud_data_center_with_oil_energy_theme():
+    result = classify_headline("Oil prices steady as traders weigh shipping risks")
+
+    assert not (result["sector"] == "Cloud / Data Center" and result["theme"] == "oil / energy")
+
+
+def test_no_cloud_data_center_with_interest_rates_theme():
+    result = classify_headline("Fed officials discuss rate outlook ahead of inflation data")
+
+    assert not (result["sector"] == "Cloud / Data Center" and result["theme"] == "interest rates / Fed")
+
+
+def test_no_cloud_data_center_with_irrelevant_theme():
+    result = classify_headline("Local sports team announces spring training schedule")
+
+    assert not (result["sector"] == "Cloud / Data Center" and result["theme"] == "irrelevant")
+
+
+def test_semiconductor_headline_without_specific_theme_gets_default_market_theme():
+    result = classify_headline("Semiconductor stocks report outlook")
+
+    assert result["sector"] == "Semiconductor"
+    assert result["theme"] == "semiconductor market movement"
+
+
+def test_ai_infrastructure_headline_without_specific_theme_gets_default_theme():
+    result = classify_headline("AI infrastructure plans expansion")
+
+    assert result["sector"] == "AI Infrastructure"
+    assert result["theme"] == "AI infrastructure"
 
 
 def test_classification_labels_and_scores_stay_in_allowed_ranges():

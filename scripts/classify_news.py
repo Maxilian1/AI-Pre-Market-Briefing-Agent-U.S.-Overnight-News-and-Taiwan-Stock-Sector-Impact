@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.cli_utils import validate_iso_date
 from src.config import PROCESSED_DATA_DIR
 from src.signals.io import save_signals_csv
 from src.signals.rule_based_classifier import classify_news_dataframe
@@ -18,7 +19,7 @@ from src.signals.rule_based_classifier import classify_news_dataframe
 
 def _default_output_path(date_text: str | None) -> Path:
     if date_text:
-        output_date = date_text
+        output_date = validate_iso_date(date_text)
     else:
         output_date = datetime.now(timezone.utc).date().isoformat()
     compact_date = output_date.replace("-", "")
@@ -26,6 +27,8 @@ def _default_output_path(date_text: str | None) -> Path:
 
 
 def classify_news(args: argparse.Namespace) -> dict:
+    if args.date:
+        args.date = validate_iso_date(args.date)
     raw_df = pd.read_csv(args.input)
     signal_df = classify_news_dataframe(raw_df, keep_duplicates=args.keep_duplicates)
     output_path = Path(args.output) if args.output else _default_output_path(args.date)
@@ -64,6 +67,11 @@ def _print_counts(label: str, counts: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.date:
+        try:
+            args.date = validate_iso_date(args.date)
+        except ValueError as exc:
+            parser.error(str(exc))
     summary = classify_news(args)
 
     print(f"total raw rows: {summary['total_raw_rows']}")

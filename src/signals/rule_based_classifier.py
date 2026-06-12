@@ -12,6 +12,7 @@ from src.news_collectors.dedupe import normalize_title
 from src.signals.news_signal import NewsSignal
 from src.signals.rules import (
     CLASSIFICATION_METHOD,
+    LOW_QUALITY_TITLE_KEYWORDS,
     NEGATIVE_KEYWORDS,
     NEUTRAL_KEYWORDS,
     POSITIVE_KEYWORDS,
@@ -21,6 +22,7 @@ from src.signals.rules import (
     THEME_PRIORITY,
     TICKER_KEYWORDS,
 )
+from src.signals.text_cleaning import build_classification_text
 from src.time_utils import assign_taiwan_trading_date
 
 
@@ -57,10 +59,7 @@ def _clean_optional(value: Any) -> str | None:
 
 
 def _text_for_matching(title: str, raw_summary: str | None = None) -> str:
-    parts = [title]
-    if raw_summary:
-        parts.append(raw_summary)
-    return normalize_title(" ".join(parts))
+    return normalize_title(build_classification_text(title, raw_summary))
 
 
 def _contains_keyword(text: str, keyword: str) -> bool:
@@ -73,6 +72,11 @@ def _contains_keyword(text: str, keyword: str) -> bool:
 
 def _matched_keywords(text: str, keywords: list[str]) -> list[str]:
     return [keyword for keyword in keywords if _contains_keyword(text, keyword)]
+
+
+def _is_low_quality_title(title_text: str) -> tuple[bool, list[str]]:
+    matches = _matched_keywords(title_text, LOW_QUALITY_TITLE_KEYWORDS)
+    return bool(matches), matches
 
 
 def _pick_first_by_priority(matches: dict[str, list[str]], priority: list[str]) -> str | None:
@@ -139,8 +143,96 @@ def _reasoning(
     )
 
 
+def _irrelevant_classification(matched_rules: list[str], reason: str) -> dict:
+    return {
+        "sector": "Irrelevant",
+        "theme": "irrelevant",
+        "us_tickers": [],
+        "sentiment_label": "irrelevant",
+        "sentiment_score": 0.0,
+        "relevance_label": "irrelevant",
+        "relevance_score": 0.0,
+        "confidence": 0.3,
+        "classification_method": CLASSIFICATION_METHOD,
+        "matched_rules": matched_rules,
+        "reasoning_short": reason,
+    }
+
+
+def enforce_sector_theme_consistency(classification: dict) -> dict:
+    """Apply deterministic sector/theme consistency guards."""
+
+    result = dict(classification)
+    sector = result["sector"]
+    theme = result["theme"]
+    matched_rules = result.get("matched_rules", [])
+
+    if sector == "Energy":
+        result["theme"] = "oil / energy"
+    elif sector == "Macro":
+        result["theme"] = "interest rates / Fed"
+    elif sector == "Irrelevant":
+        result["theme"] = "irrelevant"
+        result["sentiment_label"] = "irrelevant"
+        result["sentiment_score"] = 0.0
+        result["relevance_label"] = "irrelevant"
+        result["relevance_score"] = 0.0
+    elif sector == "Memory" and theme == "irrelevant":
+        result["theme"] = "memory cycle"
+    elif sector == "Apple Supply Chain" and theme == "irrelevant":
+        result["theme"] = "Apple hardware demand"
+    elif sector == "Semiconductor" and theme == "irrelevant":
+        result["theme"] = "semiconductor market movement"
+    elif sector == "AI Infrastructure" and theme == "irrelevant":
+        result["theme"] = "AI infrastructure"
+    elif sector == "Cloud / Data Center":
+        if theme == "oil / energy":
+            result["sector"] = "Energy"
+            result["theme"] = "oil / energy"
+            result["relevance_label"], result["relevance_score"] = _relevance(
+                result["sector"],
+                result["theme"],
+                result["us_tickers"],
+            )
+        elif theme == "interest rates / Fed":
+            result["sector"] = "Macro"
+            result["theme"] = "interest rates / Fed"
+            result["relevance_label"], result["relevance_score"] = _relevance(
+                result["sector"],
+                result["theme"],
+                result["us_tickers"],
+            )
+        elif theme == "irrelevant":
+            has_cloud_rule = any(rule.startswith("sector:Cloud / Data Center:") for rule in matched_rules)
+            if has_cloud_rule:
+                result["theme"] = "data center capex"
+            else:
+                result["sector"] = "Irrelevant"
+                result["theme"] = "irrelevant"
+                result["sentiment_label"] = "irrelevant"
+                result["sentiment_score"] = 0.0
+                result["relevance_label"] = "irrelevant"
+                result["relevance_score"] = 0.0
+
+    result["reasoning_short"] = _reasoning(
+        result["us_tickers"],
+        result["theme"],
+        result["sector"],
+        result["sentiment_label"],
+    )
+    return result
+
+
 def classify_headline(title: str, raw_summary: str | None = None) -> dict:
     """Classify a headline/snippet into deterministic research labels."""
+
+    title_text = _text_for_matching(title, None)
+    is_low_quality, low_quality_matches = _is_low_quality_title(title_text)
+    if is_low_quality:
+        return _irrelevant_classification(
+            [f"quality:low_quality_title:{keyword}" for keyword in low_quality_matches],
+            "Title matched low-quality homepage, ad, login, subscription, or unrelated schedule patterns; classified as irrelevant.",
+        )
 
     text = _text_for_matching(title, raw_summary)
     matched_rules: list[str] = []
@@ -173,10 +265,7 @@ def classify_headline(title: str, raw_summary: str | None = None) -> dict:
     sentiment_label, sentiment_score, sentiment_rules = _sentiment(text, is_relevant)
     matched_rules.extend(sentiment_rules)
     relevance_label, relevance_score = _relevance(sector, theme, tickers)
-    confidence = _confidence(relevance_score, len(matched_rules))
-    reasoning_short = _reasoning(tickers, theme, sector, sentiment_label)
-
-    return {
+    classification = {
         "sector": sector,
         "theme": theme,
         "us_tickers": tickers,
@@ -184,11 +273,17 @@ def classify_headline(title: str, raw_summary: str | None = None) -> dict:
         "sentiment_score": sentiment_score,
         "relevance_label": relevance_label,
         "relevance_score": relevance_score,
-        "confidence": confidence,
+        "confidence": _confidence(relevance_score, len(matched_rules)),
         "classification_method": CLASSIFICATION_METHOD,
         "matched_rules": matched_rules,
-        "reasoning_short": reasoning_short,
+        "reasoning_short": _reasoning(tickers, theme, sector, sentiment_label),
     }
+    classification = enforce_sector_theme_consistency(classification)
+    classification["confidence"] = _confidence(
+        classification["relevance_score"],
+        len(classification["matched_rules"]),
+    )
+    return classification
 
 
 def _assign_taiwan_trading_date(row: dict) -> str | None:

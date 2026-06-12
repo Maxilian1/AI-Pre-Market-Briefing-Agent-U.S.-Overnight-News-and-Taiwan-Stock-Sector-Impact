@@ -89,6 +89,7 @@ def test_generate_report_script_fixture_pipeline(tmp_path):
     for header in [
         "Executive Summary",
         "Overnight U.S. News Themes",
+        "Market Context Signals",
         "Taiwan Watchlist Candidates",
         "Potentially Positive Candidates",
         "Potentially Negative Candidates",

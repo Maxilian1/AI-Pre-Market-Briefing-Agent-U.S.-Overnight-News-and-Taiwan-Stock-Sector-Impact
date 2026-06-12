@@ -1,239 +1,264 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 5 only: deterministic Taiwan pre-market Markdown research report generator.
+Implement Phase 5.7 only: report QA, aggregation cleanup, and minor rule refinements after the successful Phase 5.6 Google News overmatching fix.
 
 Important:
-Do not implement LLM generation.
-Do not call OpenAI or any external LLM API.
-Do not collect live news.
 Do not implement market data ingestion.
 Do not implement backtesting.
+Do not implement LLM classification.
+Do not call OpenAI or external LLM APIs.
+Do not scrape article bodies.
 Do not make trading recommendations.
-Do not use words like buy, sell, guaranteed, will rise, will fall, target price, or must trade.
+Do not change the core RSS collector.
+Do not change Taiwan mapping logic except for report-level grouping if necessary.
 
 Context:
-Phase 1 through Phase 4 are complete.
-Current test suite passes.
-Phase 3 produces:
-data/processed/news_signals_YYYYMMDD.csv
+Phase 5.6 fixed the major Google News overmatching issue.
+The 2026-06-11 live RSS report now looks much healthier:
+- Classified signals: 248
+- Mapped Taiwan impact candidates: 479
+- Top themes:
+  Irrelevant / irrelevant: 77
+  Energy / oil / energy: 67
+  Semiconductor / semiconductor market movement: 44
+  Memory / memory cycle: 19
+  Macro / interest rates / Fed: 12
+  Cloud / Data Center / data center capex: 1
 
-Phase 4 produces:
-data/processed/taiwan_impact_candidates_YYYYMMDD.csv
+Remaining issues:
+1. Some relevant semiconductor/memory headlines are still classified as Irrelevant, e.g. SRAM / AI world.
+2. Report headline sanitization produces awkward text such as "restricted wording-Off" when external titles contain "sell-off".
+3. Taiwan Watchlist repeats the same Taiwan ticker many times instead of aggregating by target.
+4. Macro / Energy context is being mixed with unmapped Taiwan candidates instead of being shown as market context.
+5. The report should be more presentation-ready before Phase 6 backtesting.
 
-Now we need a deterministic Markdown report generator that summarizes:
-1. overnight U.S. news themes
-2. potentially affected Taiwan baskets / sectors / tickers
-3. positive / negative / neutral candidate impacts
-4. confidence and limitations
-5. source provenance
+Goals:
+Improve report usability and classifier edge cases without changing the overall architecture.
 
-Goal:
-Generate:
-data/reports/taiwan_premarket_report_YYYYMMDD.md
+Tasks:
 
-Inputs:
-- data/processed/news_signals_YYYYMMDD.csv
-- data/processed/taiwan_impact_candidates_YYYYMMDD.csv
+1. Add minor memory / semiconductor keyword refinements
 
-Output:
-- data/reports/taiwan_premarket_report_YYYYMMDD.md
+Update rule-based classification so the following terms are treated as memory or semiconductor domain signals:
+- SRAM
+- HBM
+- high bandwidth memory
+- memory chip
+- memory chips
+- edge AI chip
+- AI chips
+- chip sector
+- semiconductor stocks
+- chip stocks
 
-Report title:
-Taiwan Pre-Market Research Brief
+Expected behavior:
+- "Why SRAM Chips Are Pulling Ahead in the New AI World" should classify as Memory or Semiconductor, not Irrelevant.
+- "3 Beaten-Down AI Chip Stocks Worth a Closer Look After the Sell-Off" should classify as Semiconductor / AI chip demand or semiconductor market movement, not Irrelevant.
+- Ad-like or homepage titles such as "AI Investing Insights - Official Homepage" should remain Irrelevant.
 
-Report structure:
+Add tests.
+
+2. Add ad-like / low-quality title filter
+
+Create or update a helper that marks titles as likely irrelevant if they contain patterns like:
+- official homepage
+- sponsored
+- advertisement
+- subscribe now
+- newsletter signup
+- login
+- press release homepage
+- unrelated sports schedule
+
+This should not override clear semiconductor / memory / macro / energy content unless the item is clearly an ad/homepage result.
+
+Add tests:
+- "AI Investing Insights - Official Homepage" => Irrelevant.
+- "Local sports team announces spring training schedule" => Irrelevant.
+- "SK hynix and NVIDIA announce multi-year memory partnership" => Memory or Semiconductor.
+
+3. Fix report headline sanitization
+
+Problem:
+The report currently produces awkward text like "restricted wording-Off" when source headlines contain terms such as "Sell-Off".
+
+Required behavior:
+- Do not use global string replacement that damages external source headlines.
+- Generated commentary must still avoid direct trading recommendation language.
+- External headlines may be displayed as external headlines, but they should be prefixed or labeled as source titles, e.g. "External headline:"
+- If the project policy requires redaction, use a natural replacement:
+  - "sell-off" -> "market decline"
+  - "stocks to buy" -> "stock ideas"
+  - "buy rating" -> "positive analyst rating"
+  - "sell rating" -> "negative analyst rating"
+
+Preferred behavior:
+- Keep original source titles in Source Provenance if they are clearly marked as external headlines.
+- Keep generated report commentary free of recommendation language.
+
+Update tests:
+- Generated commentary must not contain "buy", "sell", "will rise", "will fall", "guaranteed", "target price", "must trade".
+- Source titles can contain external terms only if they are inside a source/provenance or representative-headline context and clearly labeled as external.
+- The report should not contain "restricted wording-Off".
+
+4. Aggregate Taiwan Watchlist Candidates
+
+Update report_generator so the Taiwan Watchlist section groups candidates by:
+- taiwan_target
+- taiwan_ticker
+- taiwan_company
+- taiwan_sector
+- directional_impact_label
+
+For each group show:
+- candidate_count
+- mean_impact_score
+- max_abs_impact_score
+- mean_combined_confidence
+- directional label
+- top 2 representative supporting headlines
+
+Sort by:
+- max_abs_impact_score descending
+- mean_combined_confidence descending
+- candidate_count descending
+
+Limit displayed rows:
+- top 10 ticker candidates
+- top 10 basket candidates
+- top 10 proxy candidates
+- top 10 unmapped / review candidates
+
+Expected behavior:
+- TSMC should appear once per directional label, not repeatedly for every raw news item.
+- Quanta / Wiwynn / Hon Hai should be summarized, not spammed.
+
+Add tests:
+- report does not repeat the same taiwan_ticker more than a reasonable number of times in the top watchlist section.
+- aggregated candidate_count is shown.
+- representative supporting headlines are shown.
+
+5. Add Market Context section
+
+Add a new report section before Taiwan Watchlist:
+
+"Market Context Signals"
+
+This section should summarize Macro and Energy items separately:
+- Macro / interest rates / Fed
+- Energy / oil / energy
+
+These should be presented as broad market context, not as direct Taiwan ticker mapping.
+
+Text should say:
+"These are market context signals and are not direct Taiwan company mappings."
+
+Update report structure:
 1. Header
-   - report date
-   - generated timestamp
-   - project name
-   - research disclaimer
-
 2. Executive Summary
-   - number of raw/classified signals
-   - number of mapped Taiwan impact candidates
-   - top themes
-   - dominant directional labels
-   - short cautious summary
-
 3. Overnight U.S. News Themes
-   - grouped by sector and theme
-   - include count of signals
-   - include representative headlines
-   - include sentiment labels
+4. Market Context Signals
+5. Taiwan Watchlist Candidates
+6. Potentially Positive Candidates
+7. Potentially Negative Candidates
+8. Neutral / Unmapped / Requires Review
+9. Source Provenance
+10. Limitations
+11. Next Research Step
 
-4. Taiwan Watchlist Candidates
-   - grouped by taiwan_target_type:
-       ticker
-       basket
-       proxy
-       unmapped
-   - include Taiwan target, sector, directional_impact_label, combined_confidence, impact_score
-   - sort by absolute impact_score descending, then combined_confidence descending
+Add tests:
+- report contains Market Context Signals.
+- Macro and Energy examples appear there when present.
+- Market context section includes a caveat that it is not direct Taiwan company mapping.
 
-5. Potentially Positive Candidates
-   - list top candidates with cautious language
+6. Improve unmapped reporting
 
-6. Potentially Negative Candidates
-   - list top candidates with cautious language
+Separate unmapped into:
+- unmapped_relevant_equity_signal
+- market_context
+- irrelevant
 
-7. Neutral / Unmapped / Requires Review
-   - include neutral and unmapped candidates
-   - explain that unmapped means no deterministic seed mapping was found
+At report level:
+- Macro and Energy should generally be summarized as market_context.
+- Unknown semiconductor / AI tickers should be needs_review or unmapped_relevant_equity_signal.
+- Irrelevant should not be listed as Taiwan impact candidate.
 
-8. Source Provenance
-   - list source, title, URL if available, published_at_utc
-   - no full article body
-   - no article scraping
+Do not change core mapping if risky; this can be report-level categorization only.
 
-9. Limitations
-   - rule-based classifier
-   - deterministic seed mapping only
-   - no market validation yet
-   - possible timestamp/source limitations
-   - not investment advice
+7. Add a post-run report QA script
 
-10. Next Research Step
-   - mention that Phase 6 will add market data and backtest validation
+Create scripts/qa_report_output.py
 
-Implementation requirements:
+CLI args:
+- --report
+- --signals optional
+- --candidates optional
 
-1. Create src/reporting/report_generator.py
+Checks:
+- Report exists.
+- Required sections exist.
+- No awkward token "restricted wording".
+- No repeated watchlist spam beyond threshold.
+- Report contains "requires validation".
+- Report contains "not investment advice".
+- Report contains Source Provenance.
+- Report contains Market Context Signals.
+- If signals/candidates are provided, print:
+  - count by sector/theme
+  - top Taiwan targets
+  - unmapped count
+  - representative irrelevant headlines
 
-Implement:
-- load_report_inputs(signals_path, candidates_path) -> tuple[pandas.DataFrame, pandas.DataFrame]
-- summarize_themes(signals_df) -> pandas.DataFrame or list[dict]
-- summarize_candidates(candidates_df) -> pandas.DataFrame or list[dict]
-- render_markdown_report(signals_df, candidates_df, report_date: str | None = None) -> str
-- generate_report(signals_path, candidates_path, output_path, report_date: str | None = None) -> str
+This script should be diagnostic. It can exit non-zero for missing required sections or restricted wording artifacts.
 
-Rules:
-- Deterministic output.
-- No LLM.
-- No live API calls.
-- No trading recommendations.
-- Use cautious language:
-    potentially positive
-    potentially negative
-    neutral
-    watchlist candidate
-    requires validation
-    deterministic mapping
-    research signal
-- Do not use forbidden language:
-    buy
-    sell
-    guaranteed
-    will rise
-    will fall
-    target price
-    must trade
+Add tests.
 
-2. Create src/reporting/io.py
+8. Update README.md
 
-Implement:
-- save_markdown_report(markdown_text: str, output_path)
-- load_markdown_report(path)
+Add:
+- Phase 5.7 report QA instructions.
+- Command:
+  .\.venv\Scripts\python.exe scripts\qa_report_output.py --report data\reports\taiwan_premarket_report_20260611.md --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv
 
-3. Create scripts/generate_report.py
-
-CLI arguments:
-- --signals
-- --candidates
-- --output
-- --date
-
-Behavior:
-- Load signals CSV.
-- Load Taiwan impact candidates CSV.
-- Generate Markdown report.
-- Save to data/reports/taiwan_premarket_report_YYYYMMDD.md unless output is provided.
-- Print summary:
-    report date
-    number of input signals
-    number of impact candidates
-    top 5 themes
-    top 5 Taiwan targets
-    output path
-
-4. Tests
-
-Create tests/test_report_generator.py:
-- render_markdown_report returns a string.
-- report contains required section headers:
-    Executive Summary
-    Overnight U.S. News Themes
-    Taiwan Watchlist Candidates
-    Potentially Positive Candidates
-    Potentially Negative Candidates
-    Neutral / Unmapped / Requires Review
-    Source Provenance
-    Limitations
-- report contains non-investment-advice disclaimer.
-- report does not contain forbidden terms:
-    buy
-    sell
-    guaranteed
-    will rise
-    will fall
-    target price
-    must trade
-- report includes at least one representative headline when signals are provided.
-- report handles empty candidates gracefully.
-
-Create tests/test_generate_report_script_fixture.py:
-- Run fixture collection.
-- Run rule-based classification.
-- Run Taiwan mapping.
-- Run report generation.
-- Assert output Markdown exists.
-- Assert required sections exist.
-- Assert forbidden terms do not appear.
-- Assert no full article body field appears.
-- Assert report includes "requires validation" or similar caveat.
-
-5. Update README.md
-
-Add Phase 5 usage example:
-
-PowerShell:
-.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260115.csv --candidates data\processed\taiwan_impact_candidates_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe -m pytest
-
-Clarify:
-- Phase 5 is deterministic Markdown reporting.
-- It is not an LLM-written report.
-- It is not a trading recommendation.
-- The report is a research briefing that requires market validation.
-
-6. Update .gitignore if needed
-
-Generated report files should not pollute source control:
-- data/reports/taiwan_premarket_report_*.md
-
-Optionally keep data/fixtures/sample_report.md only if created intentionally as fixture documentation.
+Explain:
+- Phase 5.7 improves presentation quality.
+- It does not validate market performance.
+- Phase 6 will handle market data and backtesting.
 
 Validation:
 Run:
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260115.csv --candidates data\processed\taiwan_impact_candidates_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe -c "from src.reporting.report_generator import render_markdown_report; print('report import ok')"
 
-If venv is unavailable, use the same Python executable used for Phase 4 tests and document the exact command used.
+Then rerun:
+$DATE = "2026-06-11"
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode rss --feed-config data\fixtures\rss_feeds_real.json --date $DATE
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260611.csv --date $DATE
+.\.venv\Scripts\python.exe scripts\qa_live_classification.py --signals data\processed\news_signals_20260611.csv --raw data\raw\news_20260611.csv
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260611.csv --date $DATE
+.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv --date $DATE
+.\.venv\Scripts\python.exe scripts\qa_report_output.py --report data\reports\taiwan_premarket_report_20260611.md --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv
+
+Acceptance criteria:
+- Tests pass.
+- SRAM headline is no longer Irrelevant.
+- Ad/homepage headline remains Irrelevant.
+- Report contains Market Context Signals.
+- Report has aggregated Taiwan watchlist rows.
+- Report does not contain "restricted wording".
+- Report remains free of generated trading recommendation language.
+- Report still contains requires validation and not investment advice.
+- No Phase 6 backtesting is implemented.
 
 Final response:
 Summarize:
-1. Files created or modified.
+1. Files modified.
 2. Tests run and results.
-3. Example command output.
-4. Path to generated Markdown report.
-5. Known limitations.
-6. What remains for Phase 6.
+3. Classification changes for SRAM / AI chip / ad-like cases.
+4. Report aggregation behavior.
+5. Market Context section behavior.
+6. QA report results.
+7. Remaining limitations.
+8. What remains for Phase 6.
 
 Do not implement Phase 6.

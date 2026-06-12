@@ -21,6 +21,7 @@ data/raw/*
 data/processed/news_signals_*.csv
 data/processed/taiwan_impact_candidates_*.csv
 data/reports/*
+data/fixtures/rss_feeds_real.json
 !data/raw/.gitkeep
 !data/reports/.gitkeep
 !data/fixtures/sample_report.md

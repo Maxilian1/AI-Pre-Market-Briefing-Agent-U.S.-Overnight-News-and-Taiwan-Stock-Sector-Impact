@@ -10,6 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.cli_utils import validate_iso_date
 from src.config import FIXTURES_DATA_DIR, RAW_DATA_DIR
 from src.news_collectors.dedupe import assign_duplicate_group_ids
 from src.news_collectors.io import load_fixture_news, save_news_csv
@@ -18,7 +19,7 @@ from src.news_collectors.rss_collector import collect_from_feeds
 
 def _default_output_path(date_text: str | None) -> Path:
     if date_text:
-        output_date = date_text
+        output_date = validate_iso_date(date_text)
     else:
         output_date = datetime.now(timezone.utc).date().isoformat()
     compact_date = output_date.replace("-", "")
@@ -37,6 +38,8 @@ def _load_feed_config(path: Path) -> list[dict]:
 
 
 def collect_news(args: argparse.Namespace) -> dict[str, str | int]:
+    if args.date:
+        args.date = validate_iso_date(args.date)
     if args.mode == "fixture":
         fixture_path = Path(args.fixture_path or FIXTURES_DATA_DIR / "sample_raw_news.json")
         items = load_fixture_news(fixture_path)
@@ -76,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.date:
+        try:
+            args.date = validate_iso_date(args.date)
+        except ValueError as exc:
+            parser.error(str(exc))
     summary = collect_news(args)
 
     print(f"total rows: {summary['total_rows']}")

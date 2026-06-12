@@ -1,0 +1,50 @@
+[
+  {
+    "source": "Google News RSS - Oil Energy Query",
+    "title": "Oil prices steady as traders weigh shipping risks",
+    "url": "https://example.com/oil",
+    "published_at_utc": "2026-06-11T00:00:00+00:00",
+    "retrieved_at_utc": "2026-06-11T00:05:00+00:00",
+    "raw_summary": "<a href=\"https://news.google.com/rss/articles/example-oil\">Oil prices steady as traders weigh shipping risks</a>&nbsp;<font>Example Publisher</font>"
+  },
+  {
+    "source": "Google News RSS - Fed Macro Query",
+    "title": "Fed officials discuss rate outlook ahead of inflation data",
+    "url": "https://example.com/fed",
+    "published_at_utc": "2026-06-11T00:10:00+00:00",
+    "retrieved_at_utc": "2026-06-11T00:15:00+00:00",
+    "raw_summary": "<a href=\"https://news.google.com/rss/articles/example-fed\">Fed officials discuss rate outlook ahead of inflation data</a>&nbsp;Google News"
+  },
+  {
+    "source": "Google News RSS - General Query",
+    "title": "Local sports team announces spring training schedule",
+    "url": "https://example.com/sports",
+    "published_at_utc": "2026-06-11T00:20:00+00:00",
+    "retrieved_at_utc": "2026-06-11T00:25:00+00:00",
+    "raw_summary": "<a href=\"https://news.google.com/rss/articles/example-sports\">Local sports team announces spring training schedule</a>"
+  },
+  {
+    "source": "Google News RSS - Nvidia Query",
+    "title": "Nvidia AI server demand lifts accelerator supply chain",
+    "url": "https://example.com/nvidia",
+    "published_at_utc": "2026-06-11T00:30:00+00:00",
+    "retrieved_at_utc": "2026-06-11T00:35:00+00:00",
+    "raw_summary": "<a href=\"https://news.google.com/rss/articles/example-nvidia\">Nvidia AI server demand lifts accelerator supply chain</a>"
+  },
+  {
+    "source": "Google News RSS - AMD Query",
+    "title": "AMD launches data center accelerator roadmap",
+    "url": "https://example.com/amd",
+    "published_at_utc": "2026-06-11T00:40:00+00:00",
+    "retrieved_at_utc": "2026-06-11T00:45:00+00:00",
+    "raw_summary": "<a href=\"https://news.google.com/rss/articles/example-amd\">AMD launches data center accelerator roadmap</a>"
+  },
+  {
+    "source": "Google News RSS - Google Cloud Query",
+    "title": "Google Cloud announces data center expansion",
+    "url": "https://example.com/google-cloud",
+    "published_at_utc": "2026-06-11T00:50:00+00:00",
+    "retrieved_at_utc": "2026-06-11T00:55:00+00:00",
+    "raw_summary": "<a href=\"https://news.google.com/rss/articles/example-cloud\">Google Cloud announces data center expansion</a>"
+  }
+]

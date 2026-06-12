@@ -78,6 +78,20 @@ def _candidates_df() -> pd.DataFrame:
     )
 
 
+def _section(report: str, header: str) -> str:
+    start = report.index(f"## {header}")
+    next_start = report.find("\n## ", start + 1)
+    if next_start == -1:
+        return report[start:]
+    return report[start:next_start]
+
+
+def _with_title(df: pd.DataFrame, title: str) -> pd.DataFrame:
+    updated = df.copy()
+    updated["title"] = title
+    return updated
+
+
 def test_render_markdown_report_returns_string():
     report = render_markdown_report(_signals_df(), _candidates_df(), report_date="2026-01-15")
 
@@ -90,6 +104,7 @@ def test_report_contains_required_section_headers():
     for header in [
         "Executive Summary",
         "Overnight U.S. News Themes",
+        "Market Context Signals",
         "Taiwan Watchlist Candidates",
         "Potentially Positive Candidates",
         "Potentially Negative Candidates",
@@ -117,7 +132,7 @@ def test_report_does_not_contain_forbidden_terms():
 def test_report_includes_representative_headline_when_signals_are_provided():
     report = render_markdown_report(_signals_df(), _candidates_df(), report_date="2026-01-15")
 
-    assert "Nvidia AI server demand lifts attention on accelerator supply chain" in report
+    assert "External headline: Nvidia AI server demand lifts attention on accelerator supply chain" in report
     assert "Synthetic Fixture Wire" in report
 
 
@@ -153,3 +168,114 @@ def test_report_handles_empty_candidates_gracefully():
 
     assert "No Taiwan impact candidates were generated." in report
     assert "Executive Summary" in report
+
+
+def test_report_labels_external_selloff_headline_without_awkward_redaction():
+    title = "3 Beaten-Down AI Chip Stocks Worth a Closer Look After the Sell-Off"
+    report = render_markdown_report(
+        _with_title(_signals_df(), title),
+        _with_title(_candidates_df(), title),
+        report_date="2026-01-15",
+    )
+
+    assert "restricted wording-Off" not in report
+    assert "restricted wording" not in report
+    assert f"External headline: {title}" in report
+
+
+def test_report_aggregates_taiwan_watchlist_candidates():
+    candidates = pd.concat(
+        [
+            _candidates_df(),
+            _candidates_df().assign(
+                news_id="news-2",
+                duplicate_group_id="dup-2",
+                title="Nvidia accelerator supply update supports AI server theme",
+                impact_score=0.2,
+                combined_confidence=0.6,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    report = render_markdown_report(_signals_df(), candidates, report_date="2026-01-15")
+    watchlist = _section(report, "Taiwan Watchlist Candidates")
+
+    assert "candidate_count 2" in watchlist
+    assert watchlist.count("- 2330.TW TSMC:") == 1
+    assert "External headline: Nvidia accelerator supply update supports AI server theme" in watchlist
+
+
+def test_report_contains_market_context_section_with_caveat_and_examples():
+    signals = pd.DataFrame(
+        [
+            {
+                **_signals_df().iloc[0].to_dict(),
+                "news_id": "macro-1",
+                "title": "Fed officials discuss rate outlook ahead of inflation data",
+                "sector": "Macro",
+                "theme": "interest rates / Fed",
+            },
+            {
+                **_signals_df().iloc[0].to_dict(),
+                "news_id": "energy-1",
+                "title": "Oil prices steady as traders weigh shipping risks",
+                "sector": "Energy",
+                "theme": "oil / energy",
+            },
+        ]
+    )
+
+    report = render_markdown_report(signals, _candidates_df(), report_date="2026-01-15")
+
+    assert "## Market Context Signals" in report
+    assert "These are market context signals and are not direct Taiwan company mappings." in report
+    assert "External headline: Fed officials discuss rate outlook ahead of inflation data" in report
+    assert "External headline: Oil prices steady as traders weigh shipping risks" in report
+
+
+def test_market_context_unmapped_candidates_are_not_mixed_into_watchlist_review():
+    base = _candidates_df().iloc[0].to_dict()
+    candidates = pd.DataFrame(
+        [
+            {
+                **base,
+                "news_id": "macro-candidate",
+                "title": "Fed officials discuss rate outlook ahead of inflation data",
+                "sector": "Macro",
+                "theme": "interest rates / Fed",
+                "taiwan_target": "unmapped",
+                "taiwan_target_type": "unmapped",
+                "taiwan_ticker": "",
+                "taiwan_company": "",
+                "taiwan_sector": "",
+                "directional_impact_label": "unmapped",
+                "impact_score": 0.0,
+                "combined_confidence": 0.0,
+            },
+            {
+                **base,
+                "news_id": "unknown-equity",
+                "title": "Unknown AI chip supplier reports new accelerator demand",
+                "sector": "Semiconductor",
+                "theme": "AI chip demand",
+                "taiwan_target": "unmapped",
+                "taiwan_target_type": "unmapped",
+                "taiwan_ticker": "",
+                "taiwan_company": "",
+                "taiwan_sector": "",
+                "directional_impact_label": "unmapped",
+                "impact_score": 0.0,
+                "combined_confidence": 0.0,
+            },
+        ]
+    )
+
+    report = render_markdown_report(_signals_df(), candidates, report_date="2026-01-15")
+    watchlist = _section(report, "Taiwan Watchlist Candidates")
+    review = _section(report, "Neutral / Unmapped / Requires Review")
+
+    assert "candidate_count 1" in watchlist
+    assert "Unknown AI chip supplier reports new accelerator demand" in watchlist
+    assert "Fed officials discuss rate outlook ahead of inflation data" not in watchlist
+    assert "Market context candidate groups summarized above: 1" in review

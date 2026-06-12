@@ -1,0 +1,37 @@
+[
+  {
+    "source": "Google News RSS - Semiconductor AI Query",
+    "url": "https://news.google.com/rss/search?q=semiconductor%20AI%20chips%20Nvidia%20AMD%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+    "notes": "Experimental aggregator source for semiconductor / AI metadata. Stores RSS metadata/snippets only; do not fetch article bodies."
+  },
+  {
+    "source": "Google News RSS - Nvidia AMD Data Center Query",
+    "url": "https://news.google.com/rss/search?q=Nvidia%20AMD%20data%20center%20AI%20server%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+    "notes": "Experimental aggregator source for Nvidia / AMD / data center headlines. Stores RSS metadata/snippets only; do not scrape article pages."
+  },
+  {
+    "source": "Google News RSS - Apple Supply Chain Query",
+    "url": "https://news.google.com/rss/search?q=Apple%20iPhone%20supply%20chain%20Taiwan%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+    "notes": "Experimental aggregator source for Apple hardware and supply-chain metadata. Treat source provenance as aggregator metadata."
+  },
+  {
+    "source": "Google News RSS - Micron Memory Query",
+    "url": "https://news.google.com/rss/search?q=Micron%20DRAM%20NAND%20memory%20semiconductor%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+    "notes": "Experimental aggregator source for memory / Micron metadata. Stores RSS metadata/snippets only."
+  },
+  {
+    "source": "Google News RSS - Fed Macro Query",
+    "url": "https://news.google.com/rss/search?q=Federal%20Reserve%20rates%20inflation%20Nasdaq%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+    "notes": "Experimental aggregator source for Fed / macro metadata. Use for live monitoring only; historical backtests require archived news."
+  },
+  {
+    "source": "Google News RSS - Oil Energy Query",
+    "url": "https://news.google.com/rss/search?q=oil%20crude%20energy%20markets%20when%3A1d&hl=en-US&gl=US&ceid=US:en",
+    "notes": "Experimental aggregator source for oil / energy metadata. Stores RSS metadata/snippets only."
+  },
+  {
+    "source": "Yahoo Finance RSS",
+    "url": "https://finance.yahoo.com/news/rssindex",
+    "notes": "Public finance RSS metadata feed. Preferred when reachable; stores feed metadata/snippets only and does not fetch article bodies."
+  }
+]

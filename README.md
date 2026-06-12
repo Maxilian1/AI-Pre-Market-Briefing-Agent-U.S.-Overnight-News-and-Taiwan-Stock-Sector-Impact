@@ -67,6 +67,16 @@ Phase 5 adds deterministic Markdown research reporting:
 
 Phase 5 is not LLM-written, is not a trading recommendation system, and still requires market validation.
 
+## Phase 5.5 Status
+
+Phase 5.5 adds documented live RSS mode configuration:
+
+- Provides `data/fixtures/rss_feeds_real.example.json` as a real RSS configuration template.
+- Keeps local `data/fixtures/rss_feeds_real.json` out of source control.
+- Documents how to run the existing pipeline on live RSS metadata.
+
+Phase 5.5 does not add API collectors, scrape article bodies, ingest market data, run backtests, or change classifier, mapping, or report logic.
+
 ## Project Structure
 
 ```text
@@ -160,6 +170,51 @@ python scripts/collect_news.py --mode rss --feed-config data/fixtures/rss_feeds_
 ```
 
 RSS mode stores feed-provided metadata and snippets only. It does not fetch full article bodies or scrape article pages.
+
+## Live RSS Mode
+
+Fixture mode is reproducible and is used for automated tests. Live RSS mode depends on network access, source availability, and each feed's current metadata. Live RSS output is a research artifact, not investment advice.
+
+Create a local feed config from the example:
+
+```powershell
+Copy-Item data\fixtures\rss_feeds_real.example.json data\fixtures\rss_feeds_real.json
+```
+
+Run the live metadata pipeline:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode rss --feed-config data\fixtures\rss_feeds_real.json --date YYYY-MM-DD
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_YYYYMMDD.csv --date YYYY-MM-DD
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_YYYYMMDD.csv --date YYYY-MM-DD
+.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_YYYYMMDD.csv --candidates data\processed\taiwan_impact_candidates_YYYYMMDD.csv --date YYYY-MM-DD
+```
+
+Replace `YYYY-MM-DD` with a real ISO date such as `2026-06-11`; placeholder values are rejected by the CLI. RSS mode stores only feed metadata and RSS-provided snippets. Article pages are not scraped, paywalled websites are not scraped, and full article bodies are not collected. Google News RSS entries in the example config are experimental aggregator sources; source provenance should be interpreted as aggregator metadata. Historical backtesting requires archived news or a proper historical news API/dataset.
+
+## Live RSS QA and Rule Calibration
+
+Google News RSS may include aggregator HTML and URLs such as `news.google.com/rss/articles/...` inside summaries. The classifier ignores source/provider names, feed names, href URLs, and RSS provider labels so these artifacts do not become ticker or sector signals.
+
+Run QA before using live RSS artifacts for research:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\qa_signal_distribution.py --signals data\processed\news_signals_YYYYMMDD.csv
+```
+
+The QA script reports source-sector counts, sector-theme counts, suspicious Cloud/Data Center rows, GOOGL matched-rule counts, and top matched rules. It exits non-zero if known Google News overmatching patterns appear. Live RSS output should be treated as unvalidated research data until this QA check passes.
+
+## Phase 5.7 Report QA
+
+Phase 5.7 improves deterministic report presentation quality. It adds report-level Taiwan candidate aggregation, a separate Market Context Signals section for Macro and Energy items, external-headline labeling, and a post-run report QA script. It does not validate market performance.
+
+Run report QA after generating a report:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\qa_report_output.py --report data\reports\taiwan_premarket_report_20260611.md --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv
+```
+
+The report QA script checks required sections, repeated watchlist rows, awkward redaction artifacts, source provenance, Market Context Signals, and research disclaimers. Phase 6 will handle market data ingestion and backtest validation.
 
 Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
 
