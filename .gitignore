@@ -18,6 +18,8 @@ env/
 
 # Local artifacts
 data/raw/*
+data/processed/prices_*.csv
+data/processed/return_labels_*.csv
 data/processed/news_signals_*.csv
 data/processed/taiwan_impact_candidates_*.csv
 data/reports/*

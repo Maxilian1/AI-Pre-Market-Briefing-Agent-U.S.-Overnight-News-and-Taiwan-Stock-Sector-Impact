@@ -1,264 +1,310 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 5.7 only: report QA, aggregation cleanup, and minor rule refinements after the successful Phase 5.6 Google News overmatching fix.
+Implement Phase 6A only: market data ingestion and return label construction.
 
 Important:
-Do not implement market data ingestion.
-Do not implement backtesting.
-Do not implement LLM classification.
-Do not call OpenAI or external LLM APIs.
-Do not scrape article bodies.
+Do not implement full event study.
+Do not implement regression diagnostics yet.
+Do not implement strategy backtesting.
+Do not compute Sharpe strategy performance yet.
 Do not make trading recommendations.
-Do not change the core RSS collector.
-Do not change Taiwan mapping logic except for report-level grouping if necessary.
+Do not change the existing RSS collector, classifier, Taiwan mapping, or report-generation logic except for compatibility.
+Do not call LLM APIs.
+Do not scrape websites.
 
 Context:
-Phase 5.6 fixed the major Google News overmatching issue.
-The 2026-06-11 live RSS report now looks much healthier:
-- Classified signals: 248
-- Mapped Taiwan impact candidates: 479
-- Top themes:
-  Irrelevant / irrelevant: 77
-  Energy / oil / energy: 67
-  Semiconductor / semiconductor market movement: 44
-  Memory / memory cycle: 19
-  Macro / interest rates / Fed: 12
-  Cloud / Data Center / data center capex: 1
+Phase 1 through Phase 5.7 are complete.
+Current test suite passes.
+The live RSS pipeline now produces cleaned news signals, Taiwan impact candidates, and a deterministic Markdown report.
+Now we need market data and return labels so Phase 6B can evaluate whether the news signals have explanatory power for Taiwan returns.
 
-Remaining issues:
-1. Some relevant semiconductor/memory headlines are still classified as Irrelevant, e.g. SRAM / AI world.
-2. Report headline sanitization produces awkward text such as "restricted wording-Off" when external titles contain "sell-off".
-3. Taiwan Watchlist repeats the same Taiwan ticker many times instead of aggregating by target.
-4. Macro / Energy context is being mixed with unmapped Taiwan candidates instead of being shown as market context.
-5. The report should be more presentation-ready before Phase 6 backtesting.
+Research framing:
+A signal is generated before the Taiwan market opens for a Taiwan trading date D.
+Valid return outcomes for date D include:
+- prev_close_to_open_return = Open_D / Close_previous_trading_day - 1
+- open_to_close_return = Close_D / Open_D - 1
+- close_to_close_return = Close_D / Close_previous_trading_day - 1
+- next_close_to_close_return = Close_next_trading_day / Close_D - 1
 
-Goals:
-Improve report usability and classifier edge cases without changing the overall architecture.
+These returns are labels for research validation only. They must not be used in signal generation.
 
-Tasks:
+Goal:
+Create a reproducible market-data layer that can:
+1. Download or load OHLCV market data.
+2. Compute Taiwan stock and basket returns.
+3. Build return labels for Taiwan impact candidates.
+4. Support fixture mode for tests and live yfinance mode for manual runs.
 
-1. Add minor memory / semiconductor keyword refinements
+Input:
+- data/processed/taiwan_impact_candidates_YYYYMMDD.csv
+- universe definitions from src/universe.py
+- price data from fixture CSV or yfinance
 
-Update rule-based classification so the following terms are treated as memory or semiconductor domain signals:
-- SRAM
-- HBM
-- high bandwidth memory
-- memory chip
-- memory chips
-- edge AI chip
-- AI chips
-- chip sector
-- semiconductor stocks
-- chip stocks
+Output:
+- data/processed/return_labels_YYYYMMDD.csv
 
-Expected behavior:
-- "Why SRAM Chips Are Pulling Ahead in the New AI World" should classify as Memory or Semiconductor, not Irrelevant.
-- "3 Beaten-Down AI Chip Stocks Worth a Closer Look After the Sell-Off" should classify as Semiconductor / AI chip demand or semiconductor market movement, not Irrelevant.
-- Ad-like or homepage titles such as "AI Investing Insights - Official Homepage" should remain Irrelevant.
-
-Add tests.
-
-2. Add ad-like / low-quality title filter
-
-Create or update a helper that marks titles as likely irrelevant if they contain patterns like:
-- official homepage
-- sponsored
-- advertisement
-- subscribe now
-- newsletter signup
-- login
-- press release homepage
-- unrelated sports schedule
-
-This should not override clear semiconductor / memory / macro / energy content unless the item is clearly an ad/homepage result.
-
-Add tests:
-- "AI Investing Insights - Official Homepage" => Irrelevant.
-- "Local sports team announces spring training schedule" => Irrelevant.
-- "SK hynix and NVIDIA announce multi-year memory partnership" => Memory or Semiconductor.
-
-3. Fix report headline sanitization
-
-Problem:
-The report currently produces awkward text like "restricted wording-Off" when source headlines contain terms such as "Sell-Off".
-
-Required behavior:
-- Do not use global string replacement that damages external source headlines.
-- Generated commentary must still avoid direct trading recommendation language.
-- External headlines may be displayed as external headlines, but they should be prefixed or labeled as source titles, e.g. "External headline:"
-- If the project policy requires redaction, use a natural replacement:
-  - "sell-off" -> "market decline"
-  - "stocks to buy" -> "stock ideas"
-  - "buy rating" -> "positive analyst rating"
-  - "sell rating" -> "negative analyst rating"
-
-Preferred behavior:
-- Keep original source titles in Source Provenance if they are clearly marked as external headlines.
-- Keep generated report commentary free of recommendation language.
-
-Update tests:
-- Generated commentary must not contain "buy", "sell", "will rise", "will fall", "guaranteed", "target price", "must trade".
-- Source titles can contain external terms only if they are inside a source/provenance or representative-headline context and clearly labeled as external.
-- The report should not contain "restricted wording-Off".
-
-4. Aggregate Taiwan Watchlist Candidates
-
-Update report_generator so the Taiwan Watchlist section groups candidates by:
+Required output columns:
+- taiwan_trading_date
 - taiwan_target
+- taiwan_target_type
 - taiwan_ticker
 - taiwan_company
 - taiwan_sector
 - directional_impact_label
+- impact_score
+- combined_confidence
+- return_target
+- return_target_type
+- open_price
+- close_price
+- previous_close_price
+- next_close_price
+- prev_close_to_open_return
+- open_to_close_return
+- close_to_close_return
+- next_close_to_close_return
+- return_data_available
+- return_data_notes
 
-For each group show:
-- candidate_count
-- mean_impact_score
-- max_abs_impact_score
-- mean_combined_confidence
-- directional label
-- top 2 representative supporting headlines
+Definitions:
+- return_target should be the real ticker used to compute returns.
+- For ticker targets, return_target = taiwan_ticker.
+- For BASKET:* targets, return_target should be the basket marker and returns should be equal-weighted from basket constituents.
+- For PROXY:* rows, do not compute Taiwan return labels in Phase 6A; mark return_data_available=False with notes.
+- For unmapped rows, mark return_data_available=False with notes.
+- Macro and Energy market context rows should not be forced into Taiwan stock returns unless they already map to a deterministic Taiwan target.
 
-Sort by:
-- max_abs_impact_score descending
-- mean_combined_confidence descending
-- candidate_count descending
+Implementation requirements:
 
-Limit displayed rows:
-- top 10 ticker candidates
-- top 10 basket candidates
-- top 10 proxy candidates
-- top 10 unmapped / review candidates
+1. Create src/market_data/yfinance_loader.py
 
-Expected behavior:
-- TSMC should appear once per directional label, not repeatedly for every raw news item.
-- Quanta / Wiwynn / Hon Hai should be summarized, not spammed.
+Implement:
+- download_ohlcv(tickers: list[str], start: str, end: str) -> pandas.DataFrame
+- normalize_yfinance_output(raw_df) -> pandas.DataFrame
+- save_price_data(df, output_path)
+- load_price_data(path)
 
-Add tests:
-- report does not repeat the same taiwan_ticker more than a reasonable number of times in the top watchlist section.
-- aggregated candidate_count is shown.
-- representative supporting headlines are shown.
+Normalized price data columns:
+- date
+- ticker
+- open
+- high
+- low
+- close
+- adj_close
+- volume
 
-5. Add Market Context section
+Rules:
+- Use yfinance only in live/manual mode.
+- Do not require network calls in tests.
+- Handle failed tickers gracefully.
+- If one ticker fails, log or note it but do not crash the entire process unless all tickers fail.
+- Use date as YYYY-MM-DD.
 
-Add a new report section before Taiwan Watchlist:
+2. Create src/market_data/returns.py
 
-"Market Context Signals"
+Implement:
+- compute_single_ticker_returns(price_df: pandas.DataFrame) -> pandas.DataFrame
+- compute_equal_weight_basket_returns(price_returns_df: pandas.DataFrame, basket_name: str, constituents: list[str]) -> pandas.DataFrame
+- build_return_lookup(price_returns_df, basket_returns_df=None)
 
-This section should summarize Macro and Energy items separately:
-- Macro / interest rates / Fed
-- Energy / oil / energy
+For each ticker/date compute:
+- previous_close_price
+- next_close_price
+- prev_close_to_open_return
+- open_to_close_return
+- close_to_close_return
+- next_close_to_close_return
 
-These should be presented as broad market context, not as direct Taiwan ticker mapping.
+Rules:
+- Sort by ticker and date.
+- Use trading days present in the price data.
+- Do not assume calendar days are trading days.
+- If open or close is missing, return values should be NaN and return_data_available=False downstream.
 
-Text should say:
-"These are market context signals and are not direct Taiwan company mappings."
+3. Create src/market_data/return_labels.py
 
-Update report structure:
-1. Header
-2. Executive Summary
-3. Overnight U.S. News Themes
-4. Market Context Signals
-5. Taiwan Watchlist Candidates
-6. Potentially Positive Candidates
-7. Potentially Negative Candidates
-8. Neutral / Unmapped / Requires Review
-9. Source Provenance
-10. Limitations
-11. Next Research Step
+Implement:
+- load_impact_candidates(path) -> pandas.DataFrame
+- build_return_labels(candidates_df, price_returns_df, basket_returns_df=None) -> pandas.DataFrame
 
-Add tests:
-- report contains Market Context Signals.
-- Macro and Energy examples appear there when present.
-- Market context section includes a caveat that it is not direct Taiwan company mapping.
+Behavior:
+- For each impact candidate row:
+  - If taiwan_target_type == ticker and taiwan_ticker is known:
+      join same taiwan_trading_date with that ticker's returns.
+  - If taiwan_target_type == basket:
+      compute equal-weight basket returns from universe baskets and join.
+  - If taiwan_target_type in ["proxy", "unmapped"]:
+      return_data_available=False.
+- Preserve signal metadata:
+  - directional_impact_label
+  - impact_score
+  - combined_confidence
+  - taiwan_sector
+  - taiwan_company
+- Do not drop rows without returns; mark them unavailable.
+- Do not look ahead for signal construction. Return labels can include next_close_to_close_return as an outcome label only.
 
-6. Improve unmapped reporting
+4. Create fixture price data
 
-Separate unmapped into:
-- unmapped_relevant_equity_signal
-- market_context
-- irrelevant
+Create data/fixtures/sample_prices_daily.csv
 
-At report level:
-- Macro and Energy should generally be summarized as market_context.
-- Unknown semiconductor / AI tickers should be needs_review or unmapped_relevant_equity_signal.
-- Irrelevant should not be listed as Taiwan impact candidate.
+Include a small synthetic OHLCV dataset for:
+- 2330.TW
+- 2382.TW
+- 6669.TW
+- 2317.TW
+- 2408.TW
+- 2454.TW
+- 2303.TW
+- 3711.TW
+- 2357.TW
+- 2308.TW
+- QQQ
+- SOXX
+- SMH
+- NVDA
+- AMD
+- TSM
 
-Do not change core mapping if risky; this can be report-level categorization only.
+Dates:
+- at least 5 trading days around 2026-01-15
+- include previous and next trading days
 
-7. Add a post-run report QA script
+Fixture data should be synthetic and small.
 
-Create scripts/qa_report_output.py
+5. Create scripts/download_market_data.py
 
-CLI args:
-- --report
-- --signals optional
-- --candidates optional
+CLI arguments:
+- --tickers optional comma-separated list
+- --start
+- --end
+- --output
+- --mode fixture or yfinance
+- --fixture-path optional
 
-Checks:
-- Report exists.
-- Required sections exist.
-- No awkward token "restricted wording".
-- No repeated watchlist spam beyond threshold.
-- Report contains "requires validation".
-- Report contains "not investment advice".
-- Report contains Source Provenance.
-- Report contains Market Context Signals.
-- If signals/candidates are provided, print:
-  - count by sector/theme
-  - top Taiwan targets
-  - unmapped count
-  - representative irrelevant headlines
+Behavior:
+- fixture mode loads data/fixtures/sample_prices_daily.csv and saves normalized output.
+- yfinance mode downloads live data and saves normalized output.
+- Print:
+  total tickers
+  rows
+  date range
+  missing tickers if any
+  output path
 
-This script should be diagnostic. It can exit non-zero for missing required sections or restricted wording artifacts.
+6. Create scripts/build_return_labels.py
 
-Add tests.
+CLI arguments:
+- --candidates
+- --prices
+- --output
+- --date
+
+Behavior:
+- Load Taiwan impact candidates.
+- Load normalized daily prices.
+- Compute ticker returns.
+- Compute basket returns for:
+    BASKET:TW_SEMICONDUCTOR
+    BASKET:TW_AI_SERVER
+    BASKET:TW_APPLE_SUPPLY_CHAIN
+    BASKET:TW_POWER_DATA_CENTER
+  using src/universe.py basket definitions.
+- Build return labels.
+- Save to data/processed/return_labels_YYYYMMDD.csv unless output is provided.
+- Print:
+    input candidate rows
+    return label rows
+    rows with return_data_available=True
+    rows with return_data_available=False
+    count by taiwan_target_type
+    output path
+
+7. Tests
+
+Create tests/test_market_data_returns.py:
+- fixture price data loads.
+- ticker return calculations are correct for a simple known case.
+- previous_close and next_close are aligned by trading date, not calendar date.
+- open_to_close_return is close/open - 1.
+- close_to_close_return is close/previous_close - 1.
+- next_close_to_close_return is next_close/close - 1.
+
+Create tests/test_basket_returns.py:
+- equal-weight basket returns are computed from constituents.
+- basket returns ignore missing constituent rows with a clear note or NaN behavior.
+- BASKET:TW_SEMICONDUCTOR can be computed from fixture constituents.
+
+Create tests/test_return_labels.py:
+- ticker impact candidate joins to same-date Taiwan returns.
+- basket impact candidate joins to basket returns.
+- proxy and unmapped rows are retained but marked return_data_available=False.
+- no rows are dropped.
+- return labels preserve directional_impact_label and impact_score.
+- return_data_available is False when price data is missing.
+
+Create tests/test_build_return_labels_script_fixture.py:
+- Run fixture pipeline or use fixture candidate CSV.
+- Run build_return_labels.py using fixture prices.
+- Assert output CSV exists.
+- Assert required columns exist.
+- Assert at least one available return label exists.
+- Assert proxy/unmapped rows are retained but unavailable.
 
 8. Update README.md
 
-Add:
-- Phase 5.7 report QA instructions.
-- Command:
-  .\.venv\Scripts\python.exe scripts\qa_report_output.py --report data\reports\taiwan_premarket_report_20260611.md --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv
+Add Phase 6A section:
 
-Explain:
-- Phase 5.7 improves presentation quality.
-- It does not validate market performance.
-- Phase 6 will handle market data and backtesting.
+Example PowerShell commands:
+
+Fixture mode:
+.\.venv\Scripts\python.exe scripts\download_market_data.py --mode fixture --start 2026-01-12 --end 2026-01-20 --output data\processed\prices_fixture.csv
+
+.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260115.csv --prices data\processed\prices_fixture.csv --date 2026-01-15
+
+Live yfinance mode:
+.\.venv\Scripts\python.exe scripts\download_market_data.py --mode yfinance --start 2026-06-01 --end 2026-06-13 --output data\processed\prices_20260611.csv
+
+.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260611.csv --prices data\processed\prices_20260611.csv --date 2026-06-11
+
+Clarify:
+- Phase 6A builds return labels only.
+- It does not prove signal effectiveness.
+- Returns are outcomes for Phase 6B validation.
+- yfinance live data may revise or be unavailable.
+- Taiwan holidays are handled through available trading dates in price data.
+
+9. Update .gitignore
+
+Add generated outputs:
+- data/processed/prices_*.csv
+- data/processed/return_labels_*.csv
+
+Do not ignore fixture price data.
 
 Validation:
 Run:
 .\.venv\Scripts\python.exe -m pytest
 
-Then rerun:
-$DATE = "2026-06-11"
-.\.venv\Scripts\python.exe scripts\collect_news.py --mode rss --feed-config data\fixtures\rss_feeds_real.json --date $DATE
-.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260611.csv --date $DATE
-.\.venv\Scripts\python.exe scripts\qa_live_classification.py --signals data\processed\news_signals_20260611.csv --raw data\raw\news_20260611.csv
-.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260611.csv --date $DATE
-.\.venv\Scripts\python.exe scripts\generate_report.py --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv --date $DATE
-.\.venv\Scripts\python.exe scripts\qa_report_output.py --report data\reports\taiwan_premarket_report_20260611.md --signals data\processed\news_signals_20260611.csv --candidates data\processed\taiwan_impact_candidates_20260611.csv
+Then run fixture validation:
+.\.venv\Scripts\python.exe scripts\download_market_data.py --mode fixture --start 2026-01-12 --end 2026-01-20 --output data\processed\prices_fixture.csv
+.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260115.csv --prices data\processed\prices_fixture.csv --date 2026-01-15
 
-Acceptance criteria:
-- Tests pass.
-- SRAM headline is no longer Irrelevant.
-- Ad/homepage headline remains Irrelevant.
-- Report contains Market Context Signals.
-- Report has aggregated Taiwan watchlist rows.
-- Report does not contain "restricted wording".
-- Report remains free of generated trading recommendation language.
-- Report still contains requires validation and not investment advice.
-- No Phase 6 backtesting is implemented.
+If candidate fixture for 2026-01-15 is not present, run the existing fixture pipeline first:
+.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
+.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
+
+Do not implement Phase 6B.
 
 Final response:
 Summarize:
-1. Files modified.
+1. Files created or modified.
 2. Tests run and results.
-3. Classification changes for SRAM / AI chip / ad-like cases.
-4. Report aggregation behavior.
-5. Market Context section behavior.
-6. QA report results.
-7. Remaining limitations.
-8. What remains for Phase 6.
-
-Do not implement Phase 6.
+3. Fixture market data behavior.
+4. Return label output columns.
+5. Return availability summary.
+6. Known limitations.
+7. What remains for Phase 6B.

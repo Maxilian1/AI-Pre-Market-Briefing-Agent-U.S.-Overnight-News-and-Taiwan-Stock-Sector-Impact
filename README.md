@@ -216,6 +216,28 @@ Run report QA after generating a report:
 
 The report QA script checks required sections, repeated watchlist rows, awkward redaction artifacts, source provenance, Market Context Signals, and research disclaimers. Phase 6 will handle market data ingestion and backtest validation.
 
+## Phase 6A Return Labels
+
+Phase 6A adds market data ingestion and return label construction. It builds outcome labels for later validation only; it does not prove signal effectiveness, run regressions, perform event studies, or backtest a strategy.
+
+Fixture mode is reproducible and does not use the network:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_market_data.py --mode fixture --start 2026-01-12 --end 2026-01-20 --output data\processed\prices_fixture.csv
+
+.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260115.csv --prices data\processed\prices_fixture.csv --date 2026-01-15
+```
+
+Live yfinance mode is for manual research runs and may depend on vendor availability or later data revisions:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_market_data.py --mode yfinance --start 2026-06-01 --end 2026-06-13 --output data\processed\prices_20260611.csv
+
+.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260611.csv --prices data\processed\prices_20260611.csv --date 2026-06-11
+```
+
+Phase 6A output is saved as `data/processed/return_labels_YYYYMMDD.csv`. Return fields such as `prev_close_to_open_return`, `open_to_close_return`, `close_to_close_return`, and `next_close_to_close_return` are outcome labels for Phase 6B validation. They must not be used in signal generation. Taiwan holidays and weekends are handled through the trading dates present in the price data rather than calendar-day assumptions.
+
 Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
 
 Taiwan impact candidate output is also saved under `data/processed/`. Unknown relationships become `unmapped` rather than invented.
