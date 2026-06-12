@@ -238,6 +238,30 @@ Live yfinance mode is for manual research runs and may depend on vendor availabi
 
 Phase 6A output is saved as `data/processed/return_labels_YYYYMMDD.csv`. Return fields such as `prev_close_to_open_return`, `open_to_close_return`, `close_to_close_return`, and `next_close_to_close_return` are outcome labels for Phase 6B validation. They must not be used in signal generation. Taiwan holidays and weekends are handled through the trading dates present in the price data rather than calendar-day assumptions.
 
+## Phase 6B Event-Study Diagnostics
+
+Phase 6B adds deterministic event-study diagnostics on Phase 6A return labels. It aggregates repeated same-day same-target news-candidate rows before calculating return bucket summaries, directional hit ratios, and simple descriptive t-statistics.
+
+Fixture or local return-label run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260115.csv --date 2026-01-15
+```
+
+Live return-label run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260611.csv --date 2026-06-11
+```
+
+Outputs are saved as:
+
+- `data/processed/event_study_results_YYYYMMDD.csv`
+- `data/processed/event_study_aggregated_YYYYMMDD.csv`
+- `data/reports/event_study_summary_YYYYMMDD.md`
+
+Phase 6B does not prove predictive power. One-day or fixture results are pipeline validation only. Meaningful evidence requires many archived days, baseline controls, and longer out-of-sample testing in Phase 6C or later.
+
 Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
 
 Taiwan impact candidate output is also saved under `data/processed/`. Unknown relationships become `unmapped` rather than invented.

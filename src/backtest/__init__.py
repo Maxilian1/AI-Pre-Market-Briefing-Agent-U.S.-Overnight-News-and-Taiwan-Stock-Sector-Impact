@@ -1,1 +1,1 @@
-"""Backtest package placeholder for later phases."""
+"""Backtest and event-study diagnostics package."""

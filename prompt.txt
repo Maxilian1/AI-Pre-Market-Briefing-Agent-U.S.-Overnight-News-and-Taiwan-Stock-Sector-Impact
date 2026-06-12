@@ -1,310 +1,240 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 6A only: market data ingestion and return label construction.
+Implement Phase 6B only: event-study diagnostics for return labels.
 
 Important:
-Do not implement full event study.
-Do not implement regression diagnostics yet.
-Do not implement strategy backtesting.
-Do not compute Sharpe strategy performance yet.
-Do not make trading recommendations.
-Do not change the existing RSS collector, classifier, Taiwan mapping, or report-generation logic except for compatibility.
+Do not implement live trading.
+Do not generate buy/sell recommendations.
+Do not implement portfolio optimization.
+Do not implement execution logic.
 Do not call LLM APIs.
 Do not scrape websites.
+Do not change the upstream RSS collector, classifier, Taiwan mapping, report generator, or return-label construction unless strictly needed for compatibility.
 
 Context:
-Phase 1 through Phase 5.7 are complete.
-Current test suite passes.
-The live RSS pipeline now produces cleaned news signals, Taiwan impact candidates, and a deterministic Markdown report.
-Now we need market data and return labels so Phase 6B can evaluate whether the news signals have explanatory power for Taiwan returns.
+Phase 6A is complete.
+It creates return_labels_YYYYMMDD.csv by joining Taiwan impact candidates with OHLCV-based outcome returns.
 
-Research framing:
-A signal is generated before the Taiwan market opens for a Taiwan trading date D.
-Valid return outcomes for date D include:
-- prev_close_to_open_return = Open_D / Close_previous_trading_day - 1
-- open_to_close_return = Close_D / Open_D - 1
-- close_to_close_return = Close_D / Close_previous_trading_day - 1
-- next_close_to_close_return = Close_next_trading_day / Close_D - 1
+Recent Phase 6A QA result:
+- return_labels_20260115.csv rows: 24
+- return_data_available=True: 22
+- return_data_available=False: 2
+- ticker rows: 22
+- unmapped rows: 2
+- available rows have no missing return columns
+- unavailable rows are unmapped and have NaN return columns
 
-These returns are labels for research validation only. They must not be used in signal generation.
+Now we need event-study diagnostics to evaluate whether directional news signals are associated with Taiwan returns.
 
 Goal:
-Create a reproducible market-data layer that can:
-1. Download or load OHLCV market data.
-2. Compute Taiwan stock and basket returns.
-3. Build return labels for Taiwan impact candidates.
-4. Support fixture mode for tests and live yfinance mode for manual runs.
+Create deterministic event-study diagnostics from return label files.
 
-Input:
-- data/processed/taiwan_impact_candidates_YYYYMMDD.csv
-- universe definitions from src/universe.py
-- price data from fixture CSV or yfinance
-
-Output:
+Inputs:
 - data/processed/return_labels_YYYYMMDD.csv
+- optionally multiple return label CSVs
 
-Required output columns:
-- taiwan_trading_date
-- taiwan_target
-- taiwan_target_type
-- taiwan_ticker
-- taiwan_company
-- taiwan_sector
-- directional_impact_label
-- impact_score
-- combined_confidence
-- return_target
-- return_target_type
-- open_price
-- close_price
-- previous_close_price
-- next_close_price
-- prev_close_to_open_return
-- open_to_close_return
-- close_to_close_return
-- next_close_to_close_return
-- return_data_available
-- return_data_notes
+Outputs:
+- data/processed/event_study_results_YYYYMMDD.csv
+- data/processed/event_study_aggregated_YYYYMMDD.csv
+- data/reports/event_study_summary_YYYYMMDD.md
 
-Definitions:
-- return_target should be the real ticker used to compute returns.
-- For ticker targets, return_target = taiwan_ticker.
-- For BASKET:* targets, return_target should be the basket marker and returns should be equal-weighted from basket constituents.
-- For PROXY:* rows, do not compute Taiwan return labels in Phase 6A; mark return_data_available=False with notes.
-- For unmapped rows, mark return_data_available=False with notes.
-- Macro and Energy market context rows should not be forced into Taiwan stock returns unless they already map to a deterministic Taiwan target.
+Core principle:
+A return label row is an outcome observation. But return label rows are at the news-candidate level, so repeated same-day same-ticker rows must be aggregated before summary statistics.
 
 Implementation requirements:
 
-1. Create src/market_data/yfinance_loader.py
+1. Create src/backtest/event_study.py
 
 Implement:
-- download_ohlcv(tickers: list[str], start: str, end: str) -> pandas.DataFrame
-- normalize_yfinance_output(raw_df) -> pandas.DataFrame
-- save_price_data(df, output_path)
-- load_price_data(path)
+- load_return_labels(paths) -> pandas.DataFrame
+- aggregate_target_day_signals(return_labels_df) -> pandas.DataFrame
+- compute_bucket_summary(aggregated_df, return_col: str) -> pandas.DataFrame
+- compute_directional_hit_ratio(aggregated_df, return_col: str) -> pandas.DataFrame
+- compute_simple_t_stat(values) -> dict
+- run_event_study(return_labels_df, return_cols=None) -> dict[str, pandas.DataFrame]
 
-Normalized price data columns:
-- date
-- ticker
-- open
-- high
-- low
-- close
-- adj_close
-- volume
+Aggregation logic:
+Group by:
+- taiwan_trading_date
+- return_target
+- return_target_type
+- taiwan_target_type
+- taiwan_sector
 
-Rules:
-- Use yfinance only in live/manual mode.
-- Do not require network calls in tests.
-- Handle failed tickers gracefully.
-- If one ticker fails, log or note it but do not crash the entire process unless all tickers fail.
-- Use date as YYYY-MM-DD.
+Within each group compute:
+- candidate_count
+- positive_count
+- negative_count
+- neutral_count
+- unavailable_count
+- mean_impact_score
+- sum_impact_score
+- max_abs_impact_score
+- mean_combined_confidence
+- final_directional_label
 
-2. Create src/market_data/returns.py
+final_directional_label rules:
+- If return_data_available is False for the group, final_directional_label = unavailable.
+- Else if sum_impact_score > 0, final_directional_label = potentially_positive.
+- Else if sum_impact_score < 0, final_directional_label = potentially_negative.
+- Else if sum_impact_score == 0 and neutral_count > 0, final_directional_label = neutral.
+- Else final_directional_label = neutral.
 
-Implement:
-- compute_single_ticker_returns(price_df: pandas.DataFrame) -> pandas.DataFrame
-- compute_equal_weight_basket_returns(price_returns_df: pandas.DataFrame, basket_name: str, constituents: list[str]) -> pandas.DataFrame
-- build_return_lookup(price_returns_df, basket_returns_df=None)
-
-For each ticker/date compute:
-- previous_close_price
-- next_close_price
+Preserve returns by taking the first non-null value per target/date:
 - prev_close_to_open_return
 - open_to_close_return
 - close_to_close_return
 - next_close_to_close_return
 
-Rules:
-- Sort by ticker and date.
-- Use trading days present in the price data.
-- Do not assume calendar days are trading days.
-- If open or close is missing, return values should be NaN and return_data_available=False downstream.
+Only rows with return_data_available=True should be used for return-performance statistics.
+Unavailable rows should be counted and reported separately.
 
-3. Create src/market_data/return_labels.py
+2. Return columns to evaluate
 
-Implement:
-- load_impact_candidates(path) -> pandas.DataFrame
-- build_return_labels(candidates_df, price_returns_df, basket_returns_df=None) -> pandas.DataFrame
+Default return columns:
+- prev_close_to_open_return
+- open_to_close_return
+- close_to_close_return
+- next_close_to_close_return
+
+For each return column compute by final_directional_label:
+- n
+- mean_return
+- median_return
+- std_return
+- min_return
+- max_return
+- hit_ratio_positive_return
+- hit_ratio_negative_return
+- mean_impact_score
+- mean_combined_confidence
+- simple_t_stat_vs_zero
+
+Directional hit ratio:
+- potentially_positive hit if return > 0
+- potentially_negative hit if return < 0
+- neutral has no directional hit; report average return only
+- unavailable excluded
+
+3. T-stat behavior
+
+compute_simple_t_stat(values):
+- Drop NaN.
+- If n < 2 or std == 0, return NaN for t-stat and include note.
+- Else t = mean / (std / sqrt(n)).
+- No p-value required in Phase 6B unless easy and lightweight.
+
+4. Create src/backtest/reporting.py
+
+Generate Markdown summary with sections:
+- Event Study Summary
+- Input Data
+- Aggregation Method
+- Aggregated Signal Counts
+- Return Bucket Summary
+- Directional Hit Ratio
+- Statistical Caveats
+- Limitations
+- Next Steps
+
+Required disclaimers:
+- This is a research diagnostic, not investment advice.
+- Small samples are not statistically reliable.
+- Fixture data is synthetic if fixture mode was used.
+- No conclusion should be drawn without longer out-of-sample testing.
+- Returns are outcome labels and were not used to generate signals.
+
+5. Create scripts/run_event_study.py
+
+CLI args:
+- --return-labels one or more CSV paths
+- --output-csv optional
+- --output-aggregated optional
+- --output-md optional
+- --date optional
 
 Behavior:
-- For each impact candidate row:
-  - If taiwan_target_type == ticker and taiwan_ticker is known:
-      join same taiwan_trading_date with that ticker's returns.
-  - If taiwan_target_type == basket:
-      compute equal-weight basket returns from universe baskets and join.
-  - If taiwan_target_type in ["proxy", "unmapped"]:
-      return_data_available=False.
-- Preserve signal metadata:
-  - directional_impact_label
-  - impact_score
-  - combined_confidence
-  - taiwan_sector
-  - taiwan_company
-- Do not drop rows without returns; mark them unavailable.
-- Do not look ahead for signal construction. Return labels can include next_close_to_close_return as an outcome label only.
-
-4. Create fixture price data
-
-Create data/fixtures/sample_prices_daily.csv
-
-Include a small synthetic OHLCV dataset for:
-- 2330.TW
-- 2382.TW
-- 6669.TW
-- 2317.TW
-- 2408.TW
-- 2454.TW
-- 2303.TW
-- 3711.TW
-- 2357.TW
-- 2308.TW
-- QQQ
-- SOXX
-- SMH
-- NVDA
-- AMD
-- TSM
-
-Dates:
-- at least 5 trading days around 2026-01-15
-- include previous and next trading days
-
-Fixture data should be synthetic and small.
-
-5. Create scripts/download_market_data.py
-
-CLI arguments:
-- --tickers optional comma-separated list
-- --start
-- --end
-- --output
-- --mode fixture or yfinance
-- --fixture-path optional
-
-Behavior:
-- fixture mode loads data/fixtures/sample_prices_daily.csv and saves normalized output.
-- yfinance mode downloads live data and saves normalized output.
+- Load return labels.
+- Aggregate target-day signals.
+- Run summaries for all default return columns.
+- Save aggregated rows.
+- Save CSV summary.
+- Save Markdown summary.
 - Print:
-  total tickers
-  rows
-  date range
-  missing tickers if any
-  output path
+    input rows
+    aggregated rows
+    rows with available returns
+    rows without available returns
+    count by final_directional_label
+    output paths
 
-6. Create scripts/build_return_labels.py
+6. Tests
 
-CLI arguments:
-- --candidates
-- --prices
-- --output
-- --date
+Create tests/test_event_study_aggregation.py:
+- duplicate same-date same-ticker rows aggregate into one row.
+- candidate_count is correct.
+- sum_impact_score determines final_directional_label.
+- neutral rows remain neutral when summed impact is zero.
+- return values are preserved.
+- unavailable rows are excluded from performance stats but counted.
 
-Behavior:
-- Load Taiwan impact candidates.
-- Load normalized daily prices.
-- Compute ticker returns.
-- Compute basket returns for:
-    BASKET:TW_SEMICONDUCTOR
-    BASKET:TW_AI_SERVER
-    BASKET:TW_APPLE_SUPPLY_CHAIN
-    BASKET:TW_POWER_DATA_CENTER
-  using src/universe.py basket definitions.
-- Build return labels.
-- Save to data/processed/return_labels_YYYYMMDD.csv unless output is provided.
-- Print:
-    input candidate rows
-    return label rows
-    rows with return_data_available=True
-    rows with return_data_available=False
-    count by taiwan_target_type
-    output path
+Create tests/test_event_study_metrics.py:
+- positive bucket hit ratio counts return > 0.
+- negative bucket hit ratio counts return < 0.
+- neutral bucket has no directional hit ratio or is clearly marked not applicable.
+- t-stat returns NaN or safe value when n < 2.
+- mean_return is computed correctly.
+- NaN returns are excluded.
 
-7. Tests
-
-Create tests/test_market_data_returns.py:
-- fixture price data loads.
-- ticker return calculations are correct for a simple known case.
-- previous_close and next_close are aligned by trading date, not calendar date.
-- open_to_close_return is close/open - 1.
-- close_to_close_return is close/previous_close - 1.
-- next_close_to_close_return is next_close/close - 1.
-
-Create tests/test_basket_returns.py:
-- equal-weight basket returns are computed from constituents.
-- basket returns ignore missing constituent rows with a clear note or NaN behavior.
-- BASKET:TW_SEMICONDUCTOR can be computed from fixture constituents.
-
-Create tests/test_return_labels.py:
-- ticker impact candidate joins to same-date Taiwan returns.
-- basket impact candidate joins to basket returns.
-- proxy and unmapped rows are retained but marked return_data_available=False.
-- no rows are dropped.
-- return labels preserve directional_impact_label and impact_score.
-- return_data_available is False when price data is missing.
-
-Create tests/test_build_return_labels_script_fixture.py:
-- Run fixture pipeline or use fixture candidate CSV.
-- Run build_return_labels.py using fixture prices.
+Create tests/test_run_event_study_script_fixture.py:
+- Use fixture return_labels CSV or generate it from fixture pipeline.
+- Run scripts/run_event_study.py.
 - Assert output CSV exists.
-- Assert required columns exist.
-- Assert at least one available return label exists.
-- Assert proxy/unmapped rows are retained but unavailable.
+- Assert aggregated CSV exists.
+- Assert Markdown summary exists.
+- Assert required sections exist.
+- Assert no trading recommendation language appears.
+- Assert report includes small-sample caveat.
 
-8. Update README.md
+7. Update README.md
 
-Add Phase 6A section:
+Add Phase 6B usage:
 
-Example PowerShell commands:
+Fixture:
+.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260115.csv --date 2026-01-15
 
-Fixture mode:
-.\.venv\Scripts\python.exe scripts\download_market_data.py --mode fixture --start 2026-01-12 --end 2026-01-20 --output data\processed\prices_fixture.csv
-
-.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260115.csv --prices data\processed\prices_fixture.csv --date 2026-01-15
-
-Live yfinance mode:
-.\.venv\Scripts\python.exe scripts\download_market_data.py --mode yfinance --start 2026-06-01 --end 2026-06-13 --output data\processed\prices_20260611.csv
-
-.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260611.csv --prices data\processed\prices_20260611.csv --date 2026-06-11
+Live:
+.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260611.csv --date 2026-06-11
 
 Clarify:
-- Phase 6A builds return labels only.
-- It does not prove signal effectiveness.
-- Returns are outcomes for Phase 6B validation.
-- yfinance live data may revise or be unavailable.
-- Taiwan holidays are handled through available trading dates in price data.
+- Phase 6B is event-study diagnostics.
+- It does not prove predictive power.
+- It should be run over many archived days for meaningful evidence.
+- In-sample / out-of-sample testing is Phase 6C or later.
+- The current one-day or fixture result is only a pipeline validation.
 
-9. Update .gitignore
+8. Update .gitignore
 
-Add generated outputs:
-- data/processed/prices_*.csv
-- data/processed/return_labels_*.csv
-
-Do not ignore fixture price data.
+Add:
+- data/processed/event_study_results_*.csv
+- data/processed/event_study_aggregated_*.csv
+- data/reports/event_study_summary_*.md
 
 Validation:
 Run:
 .\.venv\Scripts\python.exe -m pytest
 
-Then run fixture validation:
-.\.venv\Scripts\python.exe scripts\download_market_data.py --mode fixture --start 2026-01-12 --end 2026-01-20 --output data\processed\prices_fixture.csv
-.\.venv\Scripts\python.exe scripts\build_return_labels.py --candidates data\processed\taiwan_impact_candidates_20260115.csv --prices data\processed\prices_fixture.csv --date 2026-01-15
-
-If candidate fixture for 2026-01-15 is not present, run the existing fixture pipeline first:
-.\.venv\Scripts\python.exe scripts\collect_news.py --mode fixture --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\classify_news.py --input data\raw\news_20260115.csv --date 2026-01-15
-.\.venv\Scripts\python.exe scripts\map_taiwan_impacts.py --input data\processed\news_signals_20260115.csv --date 2026-01-15
-
-Do not implement Phase 6B.
+Then run:
+.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260115.csv --date 2026-01-15
 
 Final response:
 Summarize:
 1. Files created or modified.
 2. Tests run and results.
-3. Fixture market data behavior.
-4. Return label output columns.
-5. Return availability summary.
-6. Known limitations.
-7. What remains for Phase 6B.
+3. Aggregation behavior.
+4. Event study output summary.
+5. Known limitations.
+6. What remains for Phase 6C.
+
+Do not implement Phase 6C.
