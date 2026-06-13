@@ -1,240 +1,328 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 6B only: event-study diagnostics for return labels.
+Implement Phase 6C only: multi-day research panel, baseline controls, and regression diagnostics.
 
 Important:
 Do not implement live trading.
 Do not generate buy/sell recommendations.
-Do not implement portfolio optimization.
-Do not implement execution logic.
+Do not implement portfolio optimization or execution logic.
 Do not call LLM APIs.
 Do not scrape websites.
-Do not change the upstream RSS collector, classifier, Taiwan mapping, report generator, or return-label construction unless strictly needed for compatibility.
+Do not change upstream RSS/news classification/mapping/reporting logic.
+Do not claim predictive power from fixture or one-day data.
 
 Context:
-Phase 6A is complete.
-It creates return_labels_YYYYMMDD.csv by joining Taiwan impact candidates with OHLCV-based outcome returns.
+Phase 6B.1 is complete.
+Current event-study diagnostics now aggregate by target/day by default.
+Recent validation:
+- tests: 125 passed
+- input return label rows: 24
+- aggregated rows: 9
+- same-day same-ticker duplicate keys: 0
+- candidate_count_sum: 24
+- available aggregated rows: 8
+- unavailable aggregated rows: 1
+- bucket labels include neutral, potentially_negative, potentially_positive
+- no forbidden trading language
 
-Recent Phase 6A QA result:
-- return_labels_20260115.csv rows: 24
-- return_data_available=True: 22
-- return_data_available=False: 2
-- ticker rows: 22
-- unmapped rows: 2
-- available rows have no missing return columns
-- unavailable rows are unmapped and have NaN return columns
+Now we need a research panel and baseline-control regression layer.
 
-Now we need event-study diagnostics to evaluate whether directional news signals are associated with Taiwan returns.
+Research question:
+Do overnight U.S. semiconductor / AI news signals provide incremental explanatory power for Taiwan semiconductor / AI supply-chain returns after controlling for U.S. market and sector returns?
 
 Goal:
-Create deterministic event-study diagnostics from return label files.
+Create a multi-day target-level panel and run simple regression diagnostics.
 
 Inputs:
-- data/processed/return_labels_YYYYMMDD.csv
-- optionally multiple return label CSVs
+- one or more data/processed/return_labels_YYYYMMDD.csv files
+- optional normalized market price data containing U.S. controls:
+    QQQ
+    SOXX
+    SMH
+    NVDA
+    AMD
+    TSM
+- event study aggregation logic from Phase 6B
 
 Outputs:
-- data/processed/event_study_results_YYYYMMDD.csv
-- data/processed/event_study_aggregated_YYYYMMDD.csv
-- data/reports/event_study_summary_YYYYMMDD.md
+- data/processed/research_panel_<label>.csv
+- data/processed/baseline_controls_<label>.csv
+- data/processed/regression_results_<label>.csv
+- data/reports/regression_diagnostics_<label>.md
 
-Core principle:
-A return label row is an outcome observation. But return label rows are at the news-candidate level, so repeated same-day same-ticker rows must be aggregated before summary statistics.
+Definitions:
+For Taiwan trading date D, U.S. control returns should use the most recent U.S. trading date strictly before D, based on available price data.
+Do not assume calendar D-1 is always a trading day.
+Use available trading dates in the normalized price data.
 
-Implementation requirements:
+Default dependent variables:
+- prev_close_to_open_return
+- open_to_close_return
+- close_to_close_return
+- next_close_to_close_return
 
-1. Create src/backtest/event_study.py
-
-Implement:
-- load_return_labels(paths) -> pandas.DataFrame
-- aggregate_target_day_signals(return_labels_df) -> pandas.DataFrame
-- compute_bucket_summary(aggregated_df, return_col: str) -> pandas.DataFrame
-- compute_directional_hit_ratio(aggregated_df, return_col: str) -> pandas.DataFrame
-- compute_simple_t_stat(values) -> dict
-- run_event_study(return_labels_df, return_cols=None) -> dict[str, pandas.DataFrame]
-
-Aggregation logic:
-Group by:
-- taiwan_trading_date
-- return_target
-- return_target_type
-- taiwan_target_type
-- taiwan_sector
-
-Within each group compute:
+Default signal features:
 - candidate_count
 - positive_count
 - negative_count
 - neutral_count
-- unavailable_count
-- mean_impact_score
 - sum_impact_score
+- mean_impact_score
 - max_abs_impact_score
 - mean_combined_confidence
-- final_directional_label
+- final_directional_label dummies:
+    is_potentially_positive
+    is_potentially_negative
+    is_neutral
 
-final_directional_label rules:
-- If return_data_available is False for the group, final_directional_label = unavailable.
-- Else if sum_impact_score > 0, final_directional_label = potentially_positive.
-- Else if sum_impact_score < 0, final_directional_label = potentially_negative.
-- Else if sum_impact_score == 0 and neutral_count > 0, final_directional_label = neutral.
-- Else final_directional_label = neutral.
+Default baseline controls:
+- qqq_return
+- soxx_return
+- smh_return
+- nvda_return
+- amd_return
+- tsm_adr_return
 
-Preserve returns by taking the first non-null value per target/date:
-- prev_close_to_open_return
-- open_to_close_return
-- close_to_close_return
-- next_close_to_close_return
+Implementation requirements:
 
-Only rows with return_data_available=True should be used for return-performance statistics.
-Unavailable rows should be counted and reported separately.
+1. Create src/backtest/research_panel.py
 
-2. Return columns to evaluate
+Implement:
+- load_return_label_files(paths) -> pandas.DataFrame
+- build_target_day_panel(return_labels_df, aggregation_mode="target_day") -> pandas.DataFrame
+- add_directional_dummies(panel_df) -> pandas.DataFrame
+- validate_panel(panel_df) -> dict
 
-Default return columns:
-- prev_close_to_open_return
-- open_to_close_return
-- close_to_close_return
-- next_close_to_close_return
+Behavior:
+- Reuse aggregate_target_day_signals from Phase 6B.
+- Keep only return_data_available=True rows for regression panel by default.
+- Preserve unavailable rows in an optional QA output if useful.
+- Ensure one row per:
+    taiwan_trading_date
+    return_target
+- Add warning column or notes if duplicate keys are detected.
+- Sort by taiwan_trading_date and return_target.
 
-For each return column compute by final_directional_label:
-- n
-- mean_return
-- median_return
-- std_return
-- min_return
-- max_return
-- hit_ratio_positive_return
-- hit_ratio_negative_return
-- mean_impact_score
-- mean_combined_confidence
-- simple_t_stat_vs_zero
+2. Create src/backtest/baseline_controls.py
 
-Directional hit ratio:
-- potentially_positive hit if return > 0
-- potentially_negative hit if return < 0
-- neutral has no directional hit; report average return only
-- unavailable excluded
+Implement:
+- load_normalized_prices(path) -> pandas.DataFrame
+- compute_control_returns(price_df, control_tickers=None) -> pandas.DataFrame
+- align_controls_to_taiwan_dates(panel_df, control_returns_df) -> pandas.DataFrame
 
-3. T-stat behavior
+Rules:
+- U.S. controls use previous available U.S. trading date strictly before Taiwan trading date.
+- Control tickers:
+    QQQ -> qqq_return
+    SOXX -> soxx_return
+    SMH -> smh_return
+    NVDA -> nvda_return
+    AMD -> amd_return
+    TSM -> tsm_adr_return
+- If a control ticker is unavailable, create the column as NaN and include a warning.
+- Do not drop rows only because controls are missing.
 
-compute_simple_t_stat(values):
-- Drop NaN.
-- If n < 2 or std == 0, return NaN for t-stat and include note.
-- Else t = mean / (std / sqrt(n)).
-- No p-value required in Phase 6B unless easy and lightweight.
+3. Create src/backtest/regression_diagnostics.py
 
-4. Create src/backtest/reporting.py
+Use statsmodels if available.
 
-Generate Markdown summary with sections:
-- Event Study Summary
+Implement:
+- run_ols_diagnostic(df, y_col, x_cols, min_obs=20) -> dict
+- run_regression_suite(panel_df, dependent_vars=None, model_specs=None) -> pandas.DataFrame
+
+Default model specs:
+Model A:
+- y ~ sum_impact_score
+
+Model B:
+- y ~ sum_impact_score + mean_combined_confidence
+
+Model C:
+- y ~ sum_impact_score + qqq_return + soxx_return + smh_return
+
+Model D:
+- y ~ sum_impact_score + qqq_return + soxx_return + smh_return + nvda_return + tsm_adr_return
+
+Model E:
+- y ~ is_potentially_positive + is_potentially_negative + qqq_return + soxx_return + smh_return
+
+Rules:
+- Drop rows with NaN in required y/x columns for each model.
+- If n < min_obs or n <= number_of_parameters + 2, do not fit; return status = insufficient_sample.
+- Use HC1 robust standard errors if possible.
+- Output:
+    dependent_var
+    model_name
+    n_obs
+    x_cols
+    r_squared
+    adj_r_squared
+    coefficient for each x
+    t-stat for each x
+    p-value for each x if available
+    status
+    notes
+- Do not interpret coefficients as causal.
+
+4. Create src/backtest/regression_reporting.py
+
+Generate Markdown report:
+- Regression Diagnostics Summary
 - Input Data
-- Aggregation Method
-- Aggregated Signal Counts
-- Return Bucket Summary
-- Directional Hit Ratio
-- Statistical Caveats
-- Limitations
+- Research Panel Construction
+- Baseline Control Alignment
+- Model Specifications
+- Regression Results
+- Insufficient Sample Warnings
+- Interpretation Caveats
 - Next Steps
 
-Required disclaimers:
-- This is a research diagnostic, not investment advice.
+Required caveats:
+- This is not investment advice.
+- Regression diagnostics are not causal proof.
 - Small samples are not statistically reliable.
-- Fixture data is synthetic if fixture mode was used.
-- No conclusion should be drawn without longer out-of-sample testing.
-- Returns are outcome labels and were not used to generate signals.
+- Fixture or one-day samples cannot support inference.
+- Out-of-sample validation is required.
 
-5. Create scripts/run_event_study.py
+5. Create scripts/build_research_panel.py
 
 CLI args:
 - --return-labels one or more CSV paths
-- --output-csv optional
-- --output-aggregated optional
-- --output-md optional
-- --date optional
+- --prices optional normalized price CSV
+- --output-panel optional
+- --output-controls optional
+- --label optional
+- --aggregation-mode default target_day
 
 Behavior:
 - Load return labels.
-- Aggregate target-day signals.
-- Run summaries for all default return columns.
-- Save aggregated rows.
-- Save CSV summary.
-- Save Markdown summary.
+- Build target-day panel.
+- If prices provided, compute and align controls.
+- Save panel.
+- Save controls if computed.
 - Print:
     input rows
-    aggregated rows
-    rows with available returns
-    rows without available returns
-    count by final_directional_label
+    panel rows
+    unique dates
+    unique targets
+    duplicate key count
+    controls added
     output paths
 
-6. Tests
+6. Create scripts/run_regression_diagnostics.py
 
-Create tests/test_event_study_aggregation.py:
-- duplicate same-date same-ticker rows aggregate into one row.
-- candidate_count is correct.
-- sum_impact_score determines final_directional_label.
-- neutral rows remain neutral when summed impact is zero.
-- return values are preserved.
-- unavailable rows are excluded from performance stats but counted.
+CLI args:
+- --panel
+- --output-csv optional
+- --output-md optional
+- --label optional
+- --min-obs default 20
 
-Create tests/test_event_study_metrics.py:
-- positive bucket hit ratio counts return > 0.
-- negative bucket hit ratio counts return < 0.
-- neutral bucket has no directional hit ratio or is clearly marked not applicable.
-- t-stat returns NaN or safe value when n < 2.
-- mean_return is computed correctly.
-- NaN returns are excluded.
+Behavior:
+- Load panel.
+- Run regression suite.
+- Save CSV results.
+- Save Markdown report.
+- Print:
+    panel rows
+    dependent variables evaluated
+    models evaluated
+    fitted models
+    insufficient-sample models
+    output paths
 
-Create tests/test_run_event_study_script_fixture.py:
-- Use fixture return_labels CSV or generate it from fixture pipeline.
-- Run scripts/run_event_study.py.
-- Assert output CSV exists.
-- Assert aggregated CSV exists.
-- Assert Markdown summary exists.
-- Assert required sections exist.
-- Assert no trading recommendation language appears.
-- Assert report includes small-sample caveat.
+7. Fixtures
 
-7. Update README.md
+Create data/fixtures/sample_research_panel_directional.csv or generate it in tests.
 
-Add Phase 6B usage:
+It should include at least:
+- 30+ synthetic observations
+- mixed positive, negative, neutral labels
+- non-constant returns
+- baseline controls
+- enough rows so at least one regression can fit
 
-Fixture:
-.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260115.csv --date 2026-01-15
+Do not use this fixture to claim market evidence.
 
-Live:
-.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260611.csv --date 2026-06-11
+8. Tests
+
+Create tests/test_research_panel.py:
+- multiple return_labels files combine.
+- target_day panel has one row per date/return_target.
+- directional dummies are correct.
+- unavailable return rows are excluded from regression panel by default.
+- duplicate key detection works.
+
+Create tests/test_baseline_controls.py:
+- U.S. control returns computed correctly.
+- Taiwan date aligns to previous available U.S. trading date.
+- missing control ticker creates NaN column and warning rather than crash.
+- no calendar-day assumption is made.
+
+Create tests/test_regression_diagnostics.py:
+- insufficient sample returns status insufficient_sample.
+- synthetic 30+ row fixture fits at least one model.
+- coefficients and t-stats columns are produced.
+- NaN rows are dropped per model.
+- no causal or trading language appears in report.
+
+Create tests/test_research_panel_scripts.py:
+- run build_research_panel.py using fixture data.
+- run run_regression_diagnostics.py using synthetic panel.
+- assert output CSV and Markdown files exist.
+- assert required sections exist.
+- assert caveats appear.
+
+9. Update README.md
+
+Add Phase 6C section:
+
+Example fixture commands:
+.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_20260115.csv --prices data\processed\prices_fixture.csv --label fixture_20260115
+
+.\.venv\Scripts\python.exe scripts\run_regression_diagnostics.py --panel data\processed\research_panel_fixture_20260115.csv --label fixture_20260115 --min-obs 20
+
+Example multi-day command:
+.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_202606*.csv --prices data\processed\prices_live.csv --label live_archive
 
 Clarify:
-- Phase 6B is event-study diagnostics.
-- It does not prove predictive power.
-- It should be run over many archived days for meaningful evidence.
-- In-sample / out-of-sample testing is Phase 6C or later.
-- The current one-day or fixture result is only a pipeline validation.
+- Phase 6C requires many days for meaningful inference.
+- One-day or fixture data only validates the machinery.
+- In-sample / out-of-sample split will be Phase 6D or later.
 
-8. Update .gitignore
+10. Update .gitignore
 
-Add:
-- data/processed/event_study_results_*.csv
-- data/processed/event_study_aggregated_*.csv
-- data/reports/event_study_summary_*.md
+Add generated outputs:
+- data/processed/research_panel_*.csv
+- data/processed/baseline_controls_*.csv
+- data/processed/regression_results_*.csv
+- data/reports/regression_diagnostics_*.md
+
+Do not ignore synthetic fixtures.
 
 Validation:
 Run:
 .\.venv\Scripts\python.exe -m pytest
 
-Then run:
-.\.venv\Scripts\python.exe scripts\run_event_study.py --return-labels data\processed\return_labels_20260115.csv --date 2026-01-15
+Then run fixture workflow:
+.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_20260115.csv --prices data\processed\prices_fixture.csv --label fixture_20260115
+
+.\.venv\Scripts\python.exe scripts\run_regression_diagnostics.py --panel data\processed\research_panel_fixture_20260115.csv --label fixture_20260115 --min-obs 20
+
+Expected:
+- With one-day fixture data, most real regressions should be insufficient_sample.
+- With synthetic 30+ row fixture panel, tests should confirm regression machinery works.
 
 Final response:
 Summarize:
 1. Files created or modified.
 2. Tests run and results.
-3. Aggregation behavior.
-4. Event study output summary.
-5. Known limitations.
-6. What remains for Phase 6C.
+3. Research panel construction behavior.
+4. Baseline control alignment behavior.
+5. Regression output behavior.
+6. Insufficient sample warnings.
+7. Remaining limitations.
+8. What remains for Phase 6D.
 
-Do not implement Phase 6C.
+Do not implement Phase 6D.

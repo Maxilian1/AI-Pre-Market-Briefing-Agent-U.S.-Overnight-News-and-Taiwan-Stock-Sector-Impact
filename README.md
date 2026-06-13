@@ -262,6 +262,33 @@ Outputs are saved as:
 
 Phase 6B does not prove predictive power. One-day or fixture results are pipeline validation only. Meaningful evidence requires many archived days, baseline controls, and longer out-of-sample testing in Phase 6C or later.
 
+## Phase 6C Research Panel and Regression Diagnostics
+
+Phase 6C builds a multi-day target-level research panel, aligns U.S. baseline controls, and runs simple regression diagnostics. It does not prove predictive power, does not run live trading, and does not implement in-sample versus out-of-sample validation.
+
+Fixture panel build:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_20260115.csv --prices data\processed\prices_fixture.csv --label fixture_20260115
+
+.\.venv\Scripts\python.exe scripts\run_regression_diagnostics.py --panel data\processed\research_panel_fixture_20260115.csv --label fixture_20260115 --min-obs 20
+```
+
+Example multi-day command:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_202606*.csv --prices data\processed\prices_live.csv --label live_archive
+```
+
+Outputs are saved as:
+
+- `data/processed/research_panel_<label>.csv`
+- `data/processed/baseline_controls_<label>.csv`
+- `data/processed/regression_results_<label>.csv`
+- `data/reports/regression_diagnostics_<label>.md`
+
+Phase 6C requires many archived trading days for meaningful inference. One-day or fixture data only validates the machinery. In-sample versus out-of-sample testing is deferred to Phase 6D or later.
+
 Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
 
 Taiwan impact candidate output is also saved under `data/processed/`. Unknown relationships become `unmapped` rather than invented.
