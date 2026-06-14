@@ -1,7 +1,7 @@
 Read AGENTS.md, README.md, and research_design.md first.
 
 Task:
-Implement Phase 6C only: multi-day research panel, baseline controls, and regression diagnostics.
+Implement Phase 6D only: in-sample / out-of-sample validation protocol and model comparison diagnostics.
 
 Important:
 Do not implement live trading.
@@ -10,51 +10,45 @@ Do not implement portfolio optimization or execution logic.
 Do not call LLM APIs.
 Do not scrape websites.
 Do not change upstream RSS/news classification/mapping/reporting logic.
-Do not claim predictive power from fixture or one-day data.
+Do not claim predictive power from fixture, synthetic, or one-day samples.
 
 Context:
-Phase 6B.1 is complete.
-Current event-study diagnostics now aggregate by target/day by default.
-Recent validation:
-- tests: 125 passed
-- input return label rows: 24
-- aggregated rows: 9
-- same-day same-ticker duplicate keys: 0
-- candidate_count_sum: 24
-- available aggregated rows: 8
-- unavailable aggregated rows: 1
-- bucket labels include neutral, potentially_negative, potentially_positive
-- no forbidden trading language
+Phase 6C is complete.
+It created:
+- multi-day research panel construction
+- baseline control alignment
+- regression diagnostics
+- insufficient-sample handling
 
-Now we need a research panel and baseline-control regression layer.
+Current validation:
+- tests: 140 passed
+- one-day fixture panel: 8 rows, insufficient sample for real inference
+- synthetic 36-row fixture panel: regression machinery fits models
+- Phase 6D remains:
+  in-sample / out-of-sample splits
+  robustness checks
+  longer archived data validation
+  baseline/control model comparison
 
 Research question:
 Do overnight U.S. semiconductor / AI news signals provide incremental explanatory power for Taiwan semiconductor / AI supply-chain returns after controlling for U.S. market and sector returns?
 
 Goal:
-Create a multi-day target-level panel and run simple regression diagnostics.
+Create a validation layer that compares baseline-only models against news+baseline models using time-based train/test splits.
 
 Inputs:
-- one or more data/processed/return_labels_YYYYMMDD.csv files
-- optional normalized market price data containing U.S. controls:
-    QQQ
-    SOXX
-    SMH
-    NVDA
-    AMD
-    TSM
-- event study aggregation logic from Phase 6B
+- data/processed/research_panel_<label>.csv
 
 Outputs:
-- data/processed/research_panel_<label>.csv
-- data/processed/baseline_controls_<label>.csv
-- data/processed/regression_results_<label>.csv
-- data/reports/regression_diagnostics_<label>.md
+- data/processed/oos_validation_results_<label>.csv
+- data/reports/oos_validation_summary_<label>.md
 
-Definitions:
-For Taiwan trading date D, U.S. control returns should use the most recent U.S. trading date strictly before D, based on available price data.
-Do not assume calendar D-1 is always a trading day.
-Use available trading dates in the normalized price data.
+Key principles:
+- Splits must be chronological by taiwan_trading_date.
+- No random shuffle split.
+- If sample size is insufficient, return status = insufficient_sample.
+- Do not infer causality.
+- Do not make trading recommendations.
 
 Default dependent variables:
 - prev_close_to_open_return
@@ -62,19 +56,14 @@ Default dependent variables:
 - close_to_close_return
 - next_close_to_close_return
 
-Default signal features:
-- candidate_count
-- positive_count
-- negative_count
-- neutral_count
+Default news features:
 - sum_impact_score
 - mean_impact_score
 - max_abs_impact_score
 - mean_combined_confidence
-- final_directional_label dummies:
-    is_potentially_positive
-    is_potentially_negative
-    is_neutral
+- candidate_count
+- is_potentially_positive
+- is_potentially_negative
 
 Default baseline controls:
 - qqq_return
@@ -84,220 +73,191 @@ Default baseline controls:
 - amd_return
 - tsm_adr_return
 
+Model families:
+1. baseline_only:
+   y ~ qqq_return + soxx_return + smh_return + nvda_return + amd_return + tsm_adr_return
+
+2. news_only:
+   y ~ sum_impact_score + mean_combined_confidence + candidate_count
+
+3. news_plus_baseline:
+   y ~ sum_impact_score + mean_combined_confidence + candidate_count
+       + qqq_return + soxx_return + smh_return + nvda_return + amd_return + tsm_adr_return
+
+4. directional_plus_baseline:
+   y ~ is_potentially_positive + is_potentially_negative
+       + qqq_return + soxx_return + smh_return + nvda_return + amd_return + tsm_adr_return
+
 Implementation requirements:
 
-1. Create src/backtest/research_panel.py
+1. Create src/backtest/oos_validation.py
 
 Implement:
-- load_return_label_files(paths) -> pandas.DataFrame
-- build_target_day_panel(return_labels_df, aggregation_mode="target_day") -> pandas.DataFrame
-- add_directional_dummies(panel_df) -> pandas.DataFrame
-- validate_panel(panel_df) -> dict
-
-Behavior:
-- Reuse aggregate_target_day_signals from Phase 6B.
-- Keep only return_data_available=True rows for regression panel by default.
-- Preserve unavailable rows in an optional QA output if useful.
-- Ensure one row per:
-    taiwan_trading_date
-    return_target
-- Add warning column or notes if duplicate keys are detected.
-- Sort by taiwan_trading_date and return_target.
-
-2. Create src/backtest/baseline_controls.py
-
-Implement:
-- load_normalized_prices(path) -> pandas.DataFrame
-- compute_control_returns(price_df, control_tickers=None) -> pandas.DataFrame
-- align_controls_to_taiwan_dates(panel_df, control_returns_df) -> pandas.DataFrame
+- validate_oos_inputs(panel_df) -> dict
+- chronological_train_test_split(panel_df, test_fraction=0.3, min_train_dates=20, min_test_dates=10) -> tuple[pd.DataFrame, pd.DataFrame, dict]
+- fit_train_evaluate_test(train_df, test_df, y_col, x_cols, min_train_obs=30, min_test_obs=10) -> dict
+- run_oos_validation(panel_df, dependent_vars=None, model_specs=None, test_fraction=0.3) -> pd.DataFrame
 
 Rules:
-- U.S. controls use previous available U.S. trading date strictly before Taiwan trading date.
-- Control tickers:
-    QQQ -> qqq_return
-    SOXX -> soxx_return
-    SMH -> smh_return
-    NVDA -> nvda_return
-    AMD -> amd_return
-    TSM -> tsm_adr_return
-- If a control ticker is unavailable, create the column as NaN and include a warning.
-- Do not drop rows only because controls are missing.
+- Sort by taiwan_trading_date.
+- Split by unique dates, not by rows.
+- If unique dates < min_train_dates + min_test_dates, return insufficient_sample.
+- Drop rows with NaN in required y/x columns per model.
+- Fit OLS on train only.
+- Predict on test.
+- Compute:
+  - train_n
+  - test_n
+  - train_r_squared
+  - test_mse
+  - test_mae
+  - test_direction_accuracy for sign prediction:
+      sign(predicted_return) == sign(actual_return)
+  - test_mean_actual_return
+  - test_mean_predicted_return
+  - coefficient and t-stat for news variables if available
+  - status
+  - notes
 
-3. Create src/backtest/regression_diagnostics.py
-
-Use statsmodels if available.
+2. Model comparison
 
 Implement:
-- run_ols_diagnostic(df, y_col, x_cols, min_obs=20) -> dict
-- run_regression_suite(panel_df, dependent_vars=None, model_specs=None) -> pandas.DataFrame
+- compare_model_families(oos_results_df) -> pd.DataFrame
 
-Default model specs:
-Model A:
-- y ~ sum_impact_score
+For each dependent variable, compare:
+- baseline_only vs news_plus_baseline
+- baseline_only vs directional_plus_baseline
 
-Model B:
-- y ~ sum_impact_score + mean_combined_confidence
+Metrics:
+- delta_test_mse
+- delta_test_mae
+- delta_direction_accuracy
+- status
+- interpretation_label:
+    news_improved
+    baseline_better
+    tied
+    insufficient_sample
 
-Model C:
-- y ~ sum_impact_score + qqq_return + soxx_return + smh_return
+Important:
+Do not call this “alpha”.
+Do not claim statistical significance from OOS metric differences alone.
 
-Model D:
-- y ~ sum_impact_score + qqq_return + soxx_return + smh_return + nvda_return + tsm_adr_return
+3. Create src/backtest/oos_reporting.py
 
-Model E:
-- y ~ is_potentially_positive + is_potentially_negative + qqq_return + soxx_return + smh_return
-
-Rules:
-- Drop rows with NaN in required y/x columns for each model.
-- If n < min_obs or n <= number_of_parameters + 2, do not fit; return status = insufficient_sample.
-- Use HC1 robust standard errors if possible.
-- Output:
-    dependent_var
-    model_name
-    n_obs
-    x_cols
-    r_squared
-    adj_r_squared
-    coefficient for each x
-    t-stat for each x
-    p-value for each x if available
-    status
-    notes
-- Do not interpret coefficients as causal.
-
-4. Create src/backtest/regression_reporting.py
-
-Generate Markdown report:
-- Regression Diagnostics Summary
+Generate Markdown report with sections:
+- Out-of-Sample Validation Summary
 - Input Data
-- Research Panel Construction
-- Baseline Control Alignment
-- Model Specifications
-- Regression Results
+- Chronological Split Method
+- Model Families
+- Baseline vs News Model Comparison
 - Insufficient Sample Warnings
 - Interpretation Caveats
 - Next Steps
 
 Required caveats:
 - This is not investment advice.
-- Regression diagnostics are not causal proof.
-- Small samples are not statistically reliable.
-- Fixture or one-day samples cannot support inference.
-- Out-of-sample validation is required.
+- Out-of-sample diagnostics are not causal proof.
+- Small samples are not reliable.
+- Fixture/synthetic data cannot support market conclusions.
+- News factor usefulness requires longer live archive or historical news dataset.
+- Look-ahead bias controls depend on correct timestamps.
 
-5. Create scripts/build_research_panel.py
-
-CLI args:
-- --return-labels one or more CSV paths
-- --prices optional normalized price CSV
-- --output-panel optional
-- --output-controls optional
-- --label optional
-- --aggregation-mode default target_day
-
-Behavior:
-- Load return labels.
-- Build target-day panel.
-- If prices provided, compute and align controls.
-- Save panel.
-- Save controls if computed.
-- Print:
-    input rows
-    panel rows
-    unique dates
-    unique targets
-    duplicate key count
-    controls added
-    output paths
-
-6. Create scripts/run_regression_diagnostics.py
+4. Create scripts/run_oos_validation.py
 
 CLI args:
 - --panel
+- --label optional
 - --output-csv optional
 - --output-md optional
-- --label optional
-- --min-obs default 20
+- --test-fraction default 0.3
+- --min-train-dates default 20
+- --min-test-dates default 10
+- --data-mode fixture/live/synthetic/unknown default unknown
 
 Behavior:
-- Load panel.
-- Run regression suite.
-- Save CSV results.
+- Load research panel.
+- Run OOS validation.
+- Save results CSV.
 - Save Markdown report.
 - Print:
-    panel rows
-    dependent variables evaluated
-    models evaluated
-    fitted models
-    insufficient-sample models
-    output paths
+  - panel rows
+  - unique dates
+  - model families evaluated
+  - fitted validations
+  - insufficient-sample validations
+  - output paths
 
-7. Fixtures
+5. Fixtures
 
-Create data/fixtures/sample_research_panel_directional.csv or generate it in tests.
+Create data/fixtures/sample_research_panel_oos.csv.
 
-It should include at least:
-- 30+ synthetic observations
-- mixed positive, negative, neutral labels
-- non-constant returns
+Requirements:
+- 60+ synthetic rows
+- at least 40 unique dates
+- multiple Taiwan return targets
 - baseline controls
-- enough rows so at least one regression can fit
+- news features
+- dependent variables
+- constructed so machinery can fit at least some models
+- include both positive and negative returns
+- include positive, negative, neutral directional labels
 
-Do not use this fixture to claim market evidence.
+Do not claim this synthetic fixture is market evidence.
 
-8. Tests
+6. Tests
 
-Create tests/test_research_panel.py:
-- multiple return_labels files combine.
-- target_day panel has one row per date/return_target.
-- directional dummies are correct.
-- unavailable return rows are excluded from regression panel by default.
-- duplicate key detection works.
+Create tests/test_oos_split.py:
+- chronological split uses dates, not random rows.
+- train dates are strictly before test dates.
+- insufficient sample returns insufficient_sample.
+- no shuffle behavior.
 
-Create tests/test_baseline_controls.py:
-- U.S. control returns computed correctly.
-- Taiwan date aligns to previous available U.S. trading date.
-- missing control ticker creates NaN column and warning rather than crash.
-- no calendar-day assumption is made.
-
-Create tests/test_regression_diagnostics.py:
-- insufficient sample returns status insufficient_sample.
-- synthetic 30+ row fixture fits at least one model.
-- coefficients and t-stats columns are produced.
+Create tests/test_oos_validation.py:
+- synthetic OOS fixture fits at least one model.
+- outputs test_mse, test_mae, direction accuracy.
 - NaN rows are dropped per model.
-- no causal or trading language appears in report.
+- insufficient train/test obs handled safely.
+- no causal/trading language appears.
 
-Create tests/test_research_panel_scripts.py:
-- run build_research_panel.py using fixture data.
-- run run_regression_diagnostics.py using synthetic panel.
-- assert output CSV and Markdown files exist.
+Create tests/test_model_comparison.py:
+- baseline_only vs news_plus_baseline comparison produces delta metrics.
+- interpretation_label is one of:
+    news_improved
+    baseline_better
+    tied
+    insufficient_sample
+
+Create tests/test_run_oos_validation_script.py:
+- run script on synthetic OOS fixture.
+- assert output CSV exists.
+- assert Markdown report exists.
 - assert required sections exist.
 - assert caveats appear.
+- assert no trading recommendation language appears.
 
-9. Update README.md
+7. Update README.md
 
-Add Phase 6C section:
+Add Phase 6D section.
 
-Example fixture commands:
-.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_20260115.csv --prices data\processed\prices_fixture.csv --label fixture_20260115
+Example:
+.\.venv\Scripts\python.exe scripts\run_oos_validation.py --panel data\processed\research_panel_live_archive.csv --label live_archive --data-mode live
 
-.\.venv\Scripts\python.exe scripts\run_regression_diagnostics.py --panel data\processed\research_panel_fixture_20260115.csv --label fixture_20260115 --min-obs 20
-
-Example multi-day command:
-.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_202606*.csv --prices data\processed\prices_live.csv --label live_archive
+Synthetic fixture:
+.\.venv\Scripts\python.exe scripts\run_oos_validation.py --panel data\fixtures\sample_research_panel_oos.csv --label synthetic_oos --data-mode synthetic
 
 Clarify:
-- Phase 6C requires many days for meaningful inference.
-- One-day or fixture data only validates the machinery.
-- In-sample / out-of-sample split will be Phase 6D or later.
+- Phase 6D requires many dates.
+- One-day panels should return insufficient_sample.
+- OOS validation compares baseline-only vs news+baseline models.
+- This does not prove causality.
+- No trading recommendation is generated.
 
-10. Update .gitignore
+8. Update .gitignore
 
-Add generated outputs:
-- data/processed/research_panel_*.csv
-- data/processed/baseline_controls_*.csv
-- data/processed/regression_results_*.csv
-- data/reports/regression_diagnostics_*.md
+Add:
+- data/processed/oos_validation_results_*.csv
+- data/reports/oos_validation_summary_*.md
 
 Do not ignore synthetic fixtures.
 
@@ -305,24 +265,28 @@ Validation:
 Run:
 .\.venv\Scripts\python.exe -m pytest
 
-Then run fixture workflow:
-.\.venv\Scripts\python.exe scripts\build_research_panel.py --return-labels data\processed\return_labels_20260115.csv --prices data\processed\prices_fixture.csv --label fixture_20260115
-
-.\.venv\Scripts\python.exe scripts\run_regression_diagnostics.py --panel data\processed\research_panel_fixture_20260115.csv --label fixture_20260115 --min-obs 20
+Then run:
+.\.venv\Scripts\python.exe scripts\run_oos_validation.py --panel data\processed\research_panel_fixture_20260115.csv --label fixture_20260115 --data-mode fixture
 
 Expected:
-- With one-day fixture data, most real regressions should be insufficient_sample.
-- With synthetic 30+ row fixture panel, tests should confirm regression machinery works.
+- insufficient_sample
+
+Then run:
+.\.venv\Scripts\python.exe scripts\run_oos_validation.py --panel data\fixtures\sample_research_panel_oos.csv --label synthetic_oos --data-mode synthetic
+
+Expected:
+- at least some fitted validations
+- Markdown report with caveats
 
 Final response:
 Summarize:
 1. Files created or modified.
 2. Tests run and results.
-3. Research panel construction behavior.
-4. Baseline control alignment behavior.
-5. Regression output behavior.
-6. Insufficient sample warnings.
+3. Chronological split behavior.
+4. OOS validation behavior.
+5. Baseline vs news model comparison behavior.
+6. Insufficient sample behavior.
 7. Remaining limitations.
-8. What remains for Phase 6D.
+8. What remains for future work.
 
-Do not implement Phase 6D.
+Do not implement trading or portfolio logic.

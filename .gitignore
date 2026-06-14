@@ -25,11 +25,13 @@ data/processed/event_study_aggregated_*.csv
 data/processed/research_panel_*.csv
 data/processed/baseline_controls_*.csv
 data/processed/regression_results_*.csv
+data/processed/oos_validation_results_*.csv
 data/processed/news_signals_*.csv
 data/processed/taiwan_impact_candidates_*.csv
 data/reports/*
 data/reports/event_study_summary_*.md
 data/reports/regression_diagnostics_*.md
+data/reports/oos_validation_summary_*.md
 data/fixtures/rss_feeds_real.json
 !data/raw/.gitkeep
 !data/reports/.gitkeep

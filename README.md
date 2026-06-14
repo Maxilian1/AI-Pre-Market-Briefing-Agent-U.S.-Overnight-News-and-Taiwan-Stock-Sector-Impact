@@ -289,6 +289,29 @@ Outputs are saved as:
 
 Phase 6C requires many archived trading days for meaningful inference. One-day or fixture data only validates the machinery. In-sample versus out-of-sample testing is deferred to Phase 6D or later.
 
+## Phase 6D Out-of-Sample Validation
+
+Phase 6D adds a chronological in-sample / out-of-sample validation protocol for Phase 6C research panels. It compares baseline-only models against news-plus-baseline model families using date-based train/test splits by `taiwan_trading_date`.
+
+Synthetic fixture run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_oos_validation.py --panel data\fixtures\sample_research_panel_oos.csv --label synthetic_oos --data-mode synthetic
+```
+
+Live archive run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_oos_validation.py --panel data\processed\research_panel_live_archive.csv --label live_archive --data-mode live
+```
+
+Outputs are saved as:
+
+- `data/processed/oos_validation_results_<label>.csv`
+- `data/reports/oos_validation_summary_<label>.md`
+
+Phase 6D requires many dates. One-day panels should return `insufficient_sample`. OOS validation compares baseline-only, news-only, news-plus-baseline, and directional-plus-baseline families, but it does not prove causality or generate any portfolio/execution instruction.
+
 Classification output is a research feature table saved under `data/processed/`. It is intended for later validation and must not be interpreted as a recommendation.
 
 Taiwan impact candidate output is also saved under `data/processed/`. Unknown relationships become `unmapped` rather than invented.
